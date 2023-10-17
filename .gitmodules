@@ -1,0 +1,6 @@
+[submodule "pbbsbench"]
+	path = pbbsbench
+	url = https://github.com/cmuparlay/pbbsbench.git
+[submodule "gbbs"]
+	path = gbbs
+	url = https://github.com/ParAlg/gbbs.git
