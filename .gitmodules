@@ -4,3 +4,6 @@
 [submodule "gbbs"]
 	path = gbbs
 	url = https://github.com/ParAlg/gbbs.git
+[submodule "parlaylib"]
+	path = parlaylib
+	url = https://github.com/cmuparlay/parlaylib.git

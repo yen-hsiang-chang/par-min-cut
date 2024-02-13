@@ -1,0 +1,36 @@
+diff --git a/benchmarks/MinimumSpanningForest/Boruvka/MinimumSpanningForest.h b/benchmarks/MinimumSpanningForest/Boruvka/MinimumSpanningForest.h
+index c23ce3bf..58c90767 100644
+--- a/benchmarks/MinimumSpanningForest/Boruvka/MinimumSpanningForest.h
++++ b/benchmarks/MinimumSpanningForest/Boruvka/MinimumSpanningForest.h
+@@ -183,7 +183,7 @@ inline size_t Boruvka(edge_array<W>& E, uintE*& vtxs, uintE*& next_vtxs,
+ 
+     // 7. filter (or ignore) self-edges.
+     auto self_loop_f = [&](size_t i) { return !(edge_ids[i] & TOP_BIT); };
+-    auto self_loop_im = parlay::delayed_seq<bool>(n, self_loop_f);
++    auto self_loop_im = parlay::delayed_seq<bool>(m, self_loop_f);
+     auto edge_ids_im = gbbs::make_slice(edge_ids, m);
+     m = parlay::pack_out(edge_ids_im, self_loop_im,
+                          gbbs::make_slice(next_edge_ids, m));
+@@ -452,7 +452,7 @@ inline sequence<std::tuple<uintE, uintE, W>> MinimumSpanningForest(
+   }
+   std::cout << "#edges in output mst: " << mst_edges.size() << "\n";
+   auto wgh_imap_f = [&](size_t i) { return std::get<2>(mst_edges[i]); };
+-  auto wgh_imap = parlay::delayed_seq<size_t>(mst_edges.size(), wgh_imap_f);
++  auto wgh_imap = parlay::delayed_seq<W>(mst_edges.size(), wgh_imap_f);
+   std::cout << "total weight = " << parlay::reduce(wgh_imap) << "\n";
+ 
+   gbbs::free_array(min_edges, n);
+diff --git a/gbbs/bridge.h b/gbbs/bridge.h
+index 2dd65184..2b5f1ce7 100644
+--- a/gbbs/bridge.h
++++ b/gbbs/bridge.h
+@@ -302,7 +302,8 @@ inline bool write_min(ET* a, ET b, F less) {
+   ET c;
+   bool r = 0;
+   do
+-    c = *a;
++    // c = *a;
++    std::memcpy(&c, a, sizeof(ET));
+   while (less(b, c) && !(r = atomic_compare_and_swap(a, c, b)));
+   return r;
+ }
