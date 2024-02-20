@@ -9,7 +9,7 @@ OBJS := $(SRCS:%=$(BUILD_DIR)/obj/%.o)
 JEMALLOCLD = $(shell jemalloc-config --libdir)
 JEMALLOC = -L$(JEMALLOCLD)
 CFLAGS = -O3 -DNDEBUG -std=c++17 -mcx16 -latomic -march=native \
-				 -fopenmp -DPARLAY_USE_STD_ALLOC # -DPARLAY_OPENMP 
+				 -fopenmp -DPARLAY_OPENMP # -DPARLAY_USE_STD_ALLOC
 LFLAGS = -Iparlaylib/include -Igbbs/ $(JEMALLOC)
 
 min-cut: $(OBJS)

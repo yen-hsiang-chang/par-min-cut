@@ -1,0 +1,108 @@
+diff --git a/include/parlay/internal/scheduler_plugins/omp.h b/include/parlay/internal/scheduler_plugins/omp.h
+index 21a58d1..408b67a 100644
+--- a/include/parlay/internal/scheduler_plugins/omp.h
++++ b/include/parlay/internal/scheduler_plugins/omp.h
+@@ -28,55 +28,67 @@ inline size_t worker_id() {
+   return omp_get_thread_num();
+ }
+ 
+-
+ template <typename F>
+-inline void parallel_for(size_t start, size_t end, F&& f, long granularity, bool) {
+-  static_assert(std::is_invocable_v<F&, size_t>);
++static size_t get_granularity(size_t start, size_t end, F& f) {
++  size_t done = 0;
++  size_t sz = 1;
++  unsigned long long int ticks = 0;
++  do {
++    sz = std::min(sz, end - (start + done));
++    auto tstart = std::chrono::steady_clock::now();
++    for (size_t i = 0; i < sz; i++) f(start + done + i);
++    auto tstop = std::chrono::steady_clock::now();
++    ticks = static_cast<unsigned long long int>(std::chrono::duration_cast<
++              std::chrono::nanoseconds>(tstop - tstart).count());
++    done += sz;
++    sz *= 2;
++  } while (ticks < 10000 && done < (end - start));
++  return done;
++}
+ 
+-  if (end == start + 1) {
+-    f(start);
+-  }
+-  else if ((end - start) <= static_cast<size_t>(granularity)) {
+-    for (size_t i=start; i < end; i++) {
+-      f(i);
+-    }
++template <typename F>
++inline void par_for_(size_t start, size_t end, F&& f, size_t granularity) {
++  if ((end - start) <= granularity) {
++    for (size_t i = start; i < end; i++) f(i);
+   }
+-  else if (!omp_in_parallel()) {
+-    #pragma omp parallel
+-    {
+-      #pragma omp single
++  else {
++    size_t n = end - start;
++    // Not in middle to avoid clashes on set-associative caches on powers of 2.
++    size_t mid = (start + (9 * (n + 1)) / 16);
++    if (!omp_in_parallel()) {
++      #pragma omp parallel
+       {
+-        if (granularity <= 1) {
+-          #pragma omp taskloop
+-          for (size_t i = start; i < end; i++) {
+-            f(i);
+-          }
++        if (omp_get_num_threads() != 1)
++        {
++          size_t id = worker_id();
++          par_for_(start + id * n / omp_get_num_threads(), start + (id + 1) * n / omp_get_num_threads(), f, granularity);
+         }
+-        else {
+-          #pragma omp taskloop grainsize(granularity)
+-          for (size_t i = start; i < end; i++) {
+-            f(i);
+-          }
++        else
++        {
++          par_do([&]() { par_for_(start, mid, f, granularity); },
++              [&]() { par_for_(mid, end, f, granularity); });
+         }
+       }
+     }
+-  }
+-  else {
+-    if (granularity <= 1) {
+-      #pragma omp taskloop shared(f)
+-      for (size_t i = start; i < end; i++) {
+-        f(i);
+-      }
+-    }
+     else {
+-      #pragma omp taskloop grainsize(granularity) shared(f)
+-      for (size_t i = start; i < end; i++) {
+-        f(i);
+-      }
++      par_do([&]() { par_for_(start, mid, f, granularity); },
++            [&]() { par_for_(mid, end, f, granularity); });
+     }
+   }
+ }
+ 
++template <typename F>
++inline void parallel_for(size_t start, size_t end, F&& f, long granularity, bool) {
++  static_assert(std::is_invocable_v<F&, size_t>);
++
++  if (end > start) {
++    size_t done = get_granularity(start, end, f);
++    granularity = std::max(done, (end - start) / static_cast<size_t>(4 * num_workers()));
++    start += done;
++    par_for_(start, end, f, static_cast<size_t>(granularity));
++  }
++}
++
+ template <typename Lf, typename Rf>
+ inline void par_do(Lf&& left, Rf&& right, bool) {
+   static_assert(std::is_invocable_v<Lf&&>);
