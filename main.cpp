@@ -4,6 +4,7 @@
 
 #include "parlay/parallel.h"
 #include "parlay/sequence.h"
+#include "parlay/random.h"
 #include "gbbs/gbbs/gbbs.h"
 #include "gbbs/gbbs/io.h"
 #include "gbbs/macros.h"
@@ -80,7 +81,7 @@ int main(int argc, char* argv[]) {
     auto vertex_weight = parlay::sequence<W>(G.n, 1);
     auto edge_weight = parlay::sequence<W>(G.n - 1, 2);
 
-    auto rctree = RCTree<W>(G.n, MST_edge_list, vertex_weight, edge_weight);
+    auto rctree = RCTree<W>(G.n, MST_edge_list, vertex_weight, edge_weight, gen);
 
   }
 
