@@ -3,7 +3,7 @@ BUILD_DIR ?= build
 GBBS_SRC = gbbs/gbbs/io.cc
 MIN_CUT_SRC = main.cpp
 
-SRCS := $(GBBS_SRC) $(MIN_CUT_SRC)
+SRCS := $(MIN_CUT_SRC) $(GBBS_SRC)
 OBJS := $(SRCS:%=$(BUILD_DIR)/obj/%.o)
 
 JEMALLOCLD = $(shell jemalloc-config --libdir)
