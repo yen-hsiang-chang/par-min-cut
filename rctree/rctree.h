@@ -42,7 +42,7 @@ RCTree<T>::RCTree(gbbs::uintE n, parlay::sequence<std::pair<gbbs::uintE, gbbs::u
       edges[i] = std::make_tuple(edge_list[i - (n - 1)].second, edge_list[i - (n - 1)].first, i - (n - 1));
   });
 
-  general_sort(edges, std::less<std::tuple<gbbs::uintE, gbbs::uintE, size_t>>());
+  utils::general_sort(edges, std::less<std::tuple<gbbs::uintE, gbbs::uintE, size_t>>());
 
   parlay::parallel_for(0, m, [&](size_t i) {
     if (i == 0 || (std::get<0>(edges[i]) != std::get<0>(edges[i - 1]))) {
@@ -132,7 +132,7 @@ RCTree<T>::RCTree(gbbs::uintE n, parlay::sequence<std::pair<gbbs::uintE, gbbs::u
       bool color_m = dist(gen_m);
       if (!color_m)  return;
       auto gen_r = gen[boundary[1]];
-      bool color_r = boundary[0] == 0 ? false : dist(gen_r);
+      bool color_r = boundary[1] == 0 ? false : dist(gen_r);
       if (color_r)  return;
       parlay::sequence<Cluster*> unary;
       for (gbbs::uintE i = edge_ptr[v]; i < edge_ptr[v + 1]; ++i)

@@ -48,7 +48,7 @@ int main(int argc, char* argv[]) {
       E_exponential[i] = std::make_pair(exponential(local_rand), gbbs::uintE(i));
     });
 
-    general_sort(E_exponential, std::less<std::pair<double, gbbs::uintE>>());
+    utils::general_sort(E_exponential, std::less<std::pair<double, gbbs::uintE>>());
 
     parlay::parallel_for(0, G.m, [&](const size_t& i) {
       std::get<1>(E_MST_input[E_exponential[i].second]) = i; 
