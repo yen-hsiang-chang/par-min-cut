@@ -14,44 +14,33 @@
 
 int main(int argc, char* argv[]) {
 
+  using namespace utils;
+
   // random number generator
   const size_t seed = 42;
   parlay::random_generator gen(seed);
 
   // macros
   using W = double;
-  // using W = unsigned int;
 
   // read the graph, assume {u, v} only has (u, v) or (v, u)
   auto G = gbbs::gbbs_io::read_weighted_symmetric_graph<W>(argv[1], false, false);
 
   // (v, Exp(w))
-  auto E_MST_input = gbbs::new_array_no_init<std::tuple<gbbs::uintE, gbbs::uintE>>(G.m);
-  parlay::parallel_for(0, G.m, [&](const size_t& i) {
-    E_MST_input[i] = std::make_tuple(std::get<0>(G.e0[i]), 0);
-  });
+  auto E_MST_input = gbbs::new_array_no_init<std::tuple<uint, double>>(G.m);
 
-  auto G_MST_input = gbbs::symmetric_graph<gbbs::symmetric_vertex, gbbs::uintE>(
-      G.v_data, G.n, G.m,
-      [](){},
-      E_MST_input);
-  
-  auto E_exponential = parlay::sequence<std::pair<double, gbbs::uintE>>(G.m);
+  auto G_MST_input = gbbs::symmetric_graph<gbbs::symmetric_vertex, double>(
+      G.v_data, G.n, G.m, [](){}, E_MST_input);
 
   for(int iter = 0;iter < 1;++iter) {
     // Step 1: Generate weighted random edge ordering
     auto weighted_ordering_begin = omp_get_wtime();
     gen();
     parlay::parallel_for(0, G.m, [&](const size_t& i) {
-      std::exponential_distribution<double> exponential(std::get<1>(G.e0[i]));
+      auto [v, w] = G.e0[i];
+      std::exponential_distribution<double> exponential(w);
       auto local_rand = gen[i];
-      E_exponential[i] = std::make_pair(exponential(local_rand), gbbs::uintE(i));
-    });
-
-    utils::general_sort(E_exponential, std::less<std::pair<double, gbbs::uintE>>());
-
-    parlay::parallel_for(0, G.m, [&](const size_t& i) {
-      std::get<1>(E_MST_input[E_exponential[i].second]) = i; 
+      E_MST_input[i] = std::make_tuple(v, exponential(local_rand));
     });
       
     auto weighted_ordering_end = omp_get_wtime();
@@ -72,16 +61,16 @@ int main(int argc, char* argv[]) {
       break;
     }
 
-    auto MST_edge_list = parlay::sequence<std::pair<gbbs::uintE, gbbs::uintE>>::from_function(
+    auto MST_edge_list = parlay::sequence<std::pair<uint, uint>>::from_function(
       E_MST.size(), [&](size_t i) {
         auto [u, v, _] = E_MST[i];
         return std::make_pair(u, v);
       });
     
-    auto vertex_weight = parlay::sequence<W>(G.n, 1);
-    auto edge_weight = parlay::sequence<W>(G.n - 1, 2);
+    // auto vertex_weight = parlay::sequence<W>(G.n, 1);
+    // auto edge_weight = parlay::sequence<W>(G.n - 1, 2);
 
-    auto rctree = RCTree<W>(G.n, MST_edge_list, vertex_weight, edge_weight, gen);
+    // auto rctree = RCTree<W>(G.n, MST_edge_list, vertex_weight, edge_weight, gen);
 
   }
 

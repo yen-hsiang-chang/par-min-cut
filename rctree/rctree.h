@@ -13,25 +13,25 @@
 template<class T>
 class RCTree {
 public:
-  RCTree(gbbs::uintE n, parlay::sequence<std::pair<gbbs::uintE, gbbs::uintE>> edge_list, 
+  RCTree(uint n, parlay::sequence<std::pair<uint, uint>> edge_list, 
          parlay::sequence<T> vertex_weight, parlay::sequence<T> edge_weight,
          parlay::random_generator& gen);
 
 private:
-  gbbs::uintE n;
-  size_t m;
+  uint n, m;
+  uint n_ternary, m_ternary;
   parlay::sequence<size_t> edge_ptr;
-  parlay::sequence<std::tuple<gbbs::uintE, gbbs::uintE, size_t>> edges;
+  parlay::sequence<std::tuple<uint, uint, size_t>> edges;
   parlay::sequence<Cluster> edge_clusters;
   parlay::sequence<Cluster> vertex_clusters;
   parlay::sequence<Cluster> rc_clusters;
 };
 
 template<class T>
-RCTree<T>::RCTree(gbbs::uintE n, parlay::sequence<std::pair<gbbs::uintE, gbbs::uintE>> edge_list, 
+RCTree<T>::RCTree(uint n, parlay::sequence<std::pair<uint, uint>> edge_list, 
                   parlay::sequence<T> vertex_weight, parlay::sequence<T> edge_weight,
                   parlay::random_generator& gen) 
-                  : n(n), m(2LL * (n - 1)), edge_ptr(n + 1, 0), edges(2 * (n - 1)) {
+                  : n(n), m(2 * (n - 1)), edge_ptr(n + 1, 0), edges(2 * (n - 1)) {
 
   assert(edge_list.size() == n - 1);
 
@@ -42,7 +42,7 @@ RCTree<T>::RCTree(gbbs::uintE n, parlay::sequence<std::pair<gbbs::uintE, gbbs::u
       edges[i] = std::make_tuple(edge_list[i - (n - 1)].second, edge_list[i - (n - 1)].first, i - (n - 1));
   });
 
-  utils::general_sort(edges, std::less<std::tuple<gbbs::uintE, gbbs::uintE, size_t>>());
+  utils::general_sort(edges, std::less<std::tuple<uint, uint, size_t>>());
 
   parlay::parallel_for(0, m, [&](size_t i) {
     if (i == 0 || (std::get<0>(edges[i]) != std::get<0>(edges[i - 1]))) {
@@ -53,38 +53,38 @@ RCTree<T>::RCTree(gbbs::uintE n, parlay::sequence<std::pair<gbbs::uintE, gbbs::u
   edge_ptr[n] = m;
 
   auto deg = parlay::sequence<size_t>::from_function(
-    n, [&](gbbs::uintE i) {return edge_ptr[i + 1] - edge_ptr[i];});
+    n, [&](uint i) {return edge_ptr[i + 1] - edge_ptr[i];});
   
   edge_clusters = parlay::sequence<Cluster>::from_function(
-    n - 1, [&](gbbs::uintE i) {
+    n - 1, [&](uint i) {
       return Cluster(i, parlay::sequence<Cluster*>(), nullptr,
               nullptr, nullptr, edge_list[i].first, edge_list[i].second, i, i);
     }
   );
   
   vertex_clusters = parlay::sequence<Cluster>::from_function(
-    n, [&](gbbs::uintE i) {
+    n, [&](uint i) {
       return Cluster(i, parlay::sequence<Cluster*>(), nullptr);
     }
   );
 
   auto aux_ptr = parlay::sequence<Cluster*>::from_function(
-    n - 1, [&](gbbs::uintE i) {return &edge_clusters[i];});
+    n - 1, [&](uint i) {return &edge_clusters[i];});
   
   rc_clusters.resize(n);
 
-  parlay::sequence<gbbs::uintE> active;
-  for (gbbs::uintE i = 1;i < n; ++i)
+  parlay::sequence<uint> active;
+  for (uint i = 1;i < n; ++i)
     if (deg[i] == 1 || deg[i] == 2)
       active.emplace_back(i);
 
   while(!active.empty()) {
     gen();
-    auto rake = [&](const gbbs::uintE& v) {
+    auto rake = [&](const uint& v) {
       Cluster *binary_top;
       parlay::sequence<Cluster*> unary;
-      gbbs::uintE b0, be0;
-      for (gbbs::uintE i = edge_ptr[v]; i < edge_ptr[v + 1]; ++i)
+      uint b0, be0;
+      for (uint i = edge_ptr[v]; i < edge_ptr[v + 1]; ++i)
       {
         auto [from, to, id] = edges[i];
         auto &c = aux_ptr[id];
@@ -106,11 +106,11 @@ RCTree<T>::RCTree(gbbs::uintE n, parlay::sequence<std::pair<gbbs::uintE, gbbs::u
       deg[v]--;
     };
 
-    auto compress = [&](const gbbs::uintE& v) {
+    auto compress = [&](const uint& v) {
       Cluster *binary_clusters[2];
-      gbbs::uintE boundary[2], boundary_edge[2];
+      uint boundary[2], boundary_edge[2];
       int bsz = 0;
-      for (gbbs::uintE i = edge_ptr[v]; i < edge_ptr[v + 1]; ++i)
+      for (uint i = edge_ptr[v]; i < edge_ptr[v + 1]; ++i)
       {
         auto [from, to, id] = edges[i];
         auto &c = aux_ptr[id];
@@ -135,7 +135,7 @@ RCTree<T>::RCTree(gbbs::uintE n, parlay::sequence<std::pair<gbbs::uintE, gbbs::u
       bool color_r = boundary[1] == 0 ? false : dist(gen_r);
       if (color_r)  return;
       parlay::sequence<Cluster*> unary;
-      for (gbbs::uintE i = edge_ptr[v]; i < edge_ptr[v + 1]; ++i)
+      for (uint i = edge_ptr[v]; i < edge_ptr[v + 1]; ++i)
       {
         auto [from, to, id] = edges[i];
         auto &c = aux_ptr[id];
@@ -162,14 +162,14 @@ RCTree<T>::RCTree(gbbs::uintE n, parlay::sequence<std::pair<gbbs::uintE, gbbs::u
     }
 
     active.clear();
-    for (gbbs::uintE i = 1;i < n; ++i)
+    for (uint i = 1;i < n; ++i)
       if (deg[i] == 1 || deg[i] == 2)
         active.emplace_back(i);
   }
 
-  auto finalize = [&](const gbbs::uintE& v) {
+  auto finalize = [&](const uint& v) {
       parlay::sequence<Cluster*> unary;
-      for (gbbs::uintE i = edge_ptr[v]; i < edge_ptr[v + 1]; ++i)
+      for (uint i = edge_ptr[v]; i < edge_ptr[v + 1]; ++i)
       {
         auto [from, to, id] = edges[i];
         auto &c = aux_ptr[id];
