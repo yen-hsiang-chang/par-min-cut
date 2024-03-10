@@ -20,8 +20,8 @@ public:
 private:
   uint n, m;
   uint n_ternary, m_ternary;
-  parlay::sequence<size_t> edge_ptr;
-  parlay::sequence<std::tuple<uint, uint, size_t>> edges;
+  parlay::sequence<uint> edge_ptr, edge_ptr_ternary;
+  parlay::sequence<std::tuple<uint, uint, uint>> edges, edges_ternary;
   parlay::sequence<Cluster> edge_clusters;
   parlay::sequence<Cluster> vertex_clusters;
   parlay::sequence<Cluster> rc_clusters;
@@ -31,20 +31,20 @@ template<class T>
 RCTree<T>::RCTree(uint n, parlay::sequence<std::pair<uint, uint>> edge_list, 
                   parlay::sequence<T> vertex_weight, parlay::sequence<T> edge_weight,
                   parlay::random_generator& gen) 
-                  : n(n), m(2 * (n - 1)), edge_ptr(n + 1, 0), edges(2 * (n - 1)) {
+                  : n(n), m(2 * (n - 1)), edge_ptr(n + 1), edges(2 * (n - 1)) {
 
   assert(edge_list.size() == n - 1);
 
-  parlay::parallel_for(0, m, [&](const size_t& i) {
+  parlay::parallel_for(0, m, [&](const uint& i) {
     if (i < n - 1)
       edges[i] = std::make_tuple(edge_list[i].first, edge_list[i].second, i);
     else
       edges[i] = std::make_tuple(edge_list[i - (n - 1)].second, edge_list[i - (n - 1)].first, i - (n - 1));
   });
 
-  utils::general_sort(edges, std::less<std::tuple<uint, uint, size_t>>());
+  utils::general_sort(edges, std::less<std::tuple<uint, uint, uint>>());
 
-  parlay::parallel_for(0, m, [&](size_t i) {
+  parlay::parallel_for(0, m, [&](const uint& i) {
     if (i == 0 || (std::get<0>(edges[i]) != std::get<0>(edges[i - 1]))) {
       edge_ptr[std::get<0>(edges[i])] = i;
     }
@@ -52,8 +52,13 @@ RCTree<T>::RCTree(uint n, parlay::sequence<std::pair<uint, uint>> edge_list,
 
   edge_ptr[n] = m;
 
-  auto deg = parlay::sequence<size_t>::from_function(
+  auto deg = parlay::sequence<uint>::from_function(
     n, [&](uint i) {return edge_ptr[i + 1] - edge_ptr[i];});
+  
+  parlay::sequence<uint> deg_ternary;
+  
+  utils::ternary_tree(n, m, edge_ptr, edges, deg,
+                      n_ternary, m_ternary, edge_ptr_ternary, edges_ternary, deg_ternary);
   
   edge_clusters = parlay::sequence<Cluster>::from_function(
     n - 1, [&](uint i) {
