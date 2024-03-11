@@ -67,10 +67,10 @@ int main(int argc, char* argv[]) {
         return std::make_pair(u, v);
       });
     
-    auto vertex_weight = parlay::sequence<W>(G.n, 1);
-    auto edge_weight = parlay::sequence<W>(G.n - 1, 2);
+    // auto vertex_weight = parlay::sequence<W>(G.n, 1);
+    // auto edge_weight = parlay::sequence<W>(G.n - 1, 2);
 
-    auto rctree = RCTree<W>(G.n, MST_edge_list, vertex_weight, edge_weight, gen);
+    auto rctree = RCTree<uint>(G.n, MST_edge_list);
 
   }
 
