@@ -6,28 +6,31 @@
 #include "parlay/sequence.h"
 #include "../utils/utils.h"
 
+template <class T>
 class Cluster {
 public:
   Cluster();
-  Cluster(uint u, const parlay::sequence<Cluster*>& un, Cluster *rep);
-  Cluster(uint u, const parlay::sequence<Cluster*>& un, Cluster *rep,
-          Cluster *bt, uint b0, uint be0);
-  Cluster(uint u, const parlay::sequence<Cluster*>& un, Cluster *rep,
-          Cluster *bt, Cluster *bb, uint b0, uint b1, uint be0, uint be1);
+  Cluster(T u, Cluster<T> *u0, Cluster<T> *u1, Cluster<T> *rep);
+  Cluster(T u, Cluster<T> *u0, Cluster<T> *u1, Cluster<T> *rep,
+          Cluster<T> *bt, T b0, T be0);
+  Cluster(T u, Cluster<T> *u0, Cluster<T> *u1, Cluster *rep,
+          Cluster<T> *bt, Cluster<T> *bb, T b0, T b1, T be0, T be1);
   bool is_binary() const;
   void print() const;
 
-  Cluster *parent, *binary_cluster[2], *representative_cluster;
-  parlay::sequence<Cluster*> unary;
-  uint boundary[2], boundary_edge[2];
+  Cluster *parent, *unary_cluster[2], *binary_cluster[2], *representative_cluster;
+  T boundary[2], boundary_edge[2];
   // representative is the vertex/edge id if the cluster is an original vertex/edge.
-  uint representative;
+  T representative;
   int cluster_type;
 };
 
 // Default
-Cluster::Cluster() {
-  parent = binary_cluster[0] = binary_cluster[1] = nullptr;
+template <class T>
+Cluster<T>::Cluster() {
+  parent = nullptr;
+  unary_cluster[0] = unary_cluster[1] = nullptr;
+  binary_cluster[0] = binary_cluster[1] = nullptr;
   representative_cluster = nullptr;
   boundary[0] = boundary[1] = boundary_edge[0] = boundary_edge[1] = -1;
   representative = -1;
@@ -35,72 +38,73 @@ Cluster::Cluster() {
 }
 
 // Nullary
-Cluster::Cluster(uint u, const parlay::sequence<Cluster*>& un, Cluster *rep) {
-  parent = binary_cluster[0] = binary_cluster[1] = nullptr;
+template <class T>
+Cluster<T>::Cluster(T u, Cluster<T> *u0, Cluster<T> *u1, Cluster<T> *rep) {
+  parent = nullptr;
+  unary_cluster[0] = u0, unary_cluster[1] = u1;
+  binary_cluster[0] = binary_cluster[1] = nullptr;
   representative_cluster = rep;
-  unary = un;
   boundary[0] = boundary[1] = boundary_edge[0] = boundary_edge[1] = -1;
   representative = u;
   cluster_type = 0;
 }
 
 // Unary
-Cluster::Cluster(uint u, const parlay::sequence<Cluster*>& un, Cluster *rep,
-                 Cluster *bt, uint b0, uint be0) {
-  parent = binary_cluster[1] = nullptr;
-  binary_cluster[0] = bt;
+template <class T>
+Cluster<T>::Cluster(T u, Cluster<T> *u0, Cluster<T> *u1, Cluster<T> *rep,
+                           Cluster<T> *bt, T b0, T be0) {
+  parent = nullptr;
+  unary_cluster[0] = u0, unary_cluster[1] = u1;
+  binary_cluster[0] = bt, binary_cluster[1] = nullptr;
   representative_cluster = rep;
-  unary = un;
-  boundary[0] = b0;
-  boundary[1] = -1;
-  boundary_edge[0] = be0;
-  boundary_edge[1] = -1;
+  boundary[0] = b0, boundary[1] = -1;
+  boundary_edge[0] = be0, boundary_edge[1] = -1;
   representative = u;
   cluster_type = 1;
 }
 
 // Binary
-Cluster::Cluster(uint u, const parlay::sequence<Cluster*>& un, Cluster *rep,
-                 Cluster *bt, Cluster *bb, uint b0, uint b1, uint be0, uint be1) {
+template <class T>
+Cluster<T>::Cluster(T u, Cluster<T> *u0, Cluster<T> *u1, Cluster *rep,
+                    Cluster<T> *bt, Cluster<T> *bb, T b0, T b1, T be0, T be1) {
   parent = nullptr;
-  binary_cluster[0] = bt;
-  binary_cluster[1] = bb;
+  unary_cluster[0] = u0, unary_cluster[1] = u1;
+  binary_cluster[0] = bt, binary_cluster[1] = bb;
   representative_cluster = rep;
-  unary = un;
-  boundary[0] = b0;
-  boundary[1] = b1;
-  boundary_edge[0] = be0;
-  boundary_edge[1] = be1;
+  boundary[0] = b0, boundary[1] = b1;
+  boundary_edge[0] = be0, boundary_edge[1] = be1;
   representative = u;
   cluster_type = 2;
 }
 
-bool Cluster::is_binary() const {return cluster_type == 2;}
+template <class T>
+bool Cluster<T>::is_binary() const {return cluster_type == 2;}
 
-void Cluster::print() const {
+template <class T>
+void Cluster<T>::print() const {
   if (cluster_type == 0) {
-    if (unary.size()) {
+    if (unary_cluster[0]) {
       std::cout << "root cluster vertex = " << representative << "\n";
       assert(this == representative_cluster -> parent);
       representative_cluster -> print();
-      for (auto p : unary)
-        assert(this == p -> parent), p -> print();
+      assert(this == unary_cluster[0] -> parent), unary_cluster[0] -> print();
+      if (unary_cluster[1])
+        assert(this == unary_cluster[1] -> parent), unary_cluster[1] -> print();
     } else {
-      assert(parent != nullptr);
       std::cout << "nullary cluster vertex_id = " << representative << "\n";
     }
   } else if (cluster_type == 1) {
-    assert(parent != nullptr);
     std::cout << "unary cluster vertex = " << representative << "\n";
     assert(this == representative_cluster -> parent);
     representative_cluster -> print();
     assert(this == binary_cluster[0] -> parent);
     binary_cluster[0] -> print();
-    for (auto p : unary)
-      assert(this == p -> parent), p -> print();
+    if (unary_cluster[0])
+      assert(this == unary_cluster[0] -> parent), unary_cluster[0] -> print();
+    if (unary_cluster[1])
+      assert(this == unary_cluster[1] -> parent), unary_cluster[1] -> print();
   } else if (cluster_type == 2) {
-    assert(parent != nullptr);
-    if (binary_cluster[0] != nullptr) {
+    if (binary_cluster[0]) {
       std::cout << "binary cluster vertex = " << representative << "\n";
       assert(this == representative_cluster -> parent);
       representative_cluster -> print();
@@ -108,8 +112,9 @@ void Cluster::print() const {
       binary_cluster[0] -> print();
       assert(this == binary_cluster[1] -> parent);
       binary_cluster[1] -> print();
-      for (auto p : unary)
-        assert(this == p -> parent), p -> print();
+      if (unary_cluster[0])
+        assert(this == unary_cluster[0] -> parent), unary_cluster[0] -> print();
+      assert(unary_cluster[1] == nullptr);
     } else {
       std::cout << "binary cluster edge_id = " << representative << "\n";
     }

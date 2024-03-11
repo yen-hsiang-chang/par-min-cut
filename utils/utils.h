@@ -119,7 +119,7 @@ void binary_tree(const T& root, const T& n_ternary, const parlay::sequence<T>& e
   child_ptr_binary = parlay::sequence<T>::from_function(
     n_binary, [&](const T& i) {return i == root ? deg_ternary[i] : deg_ternary[i] - 1;});
 
-  parlay::scan_inplace(child_ptr_binary);
+  child_ptr_binary.push_back(parlay::scan_inplace(child_ptr_binary));
   child_edges_binary.resize(n_binary - 1);
   parent_binary.resize(n_binary);
   

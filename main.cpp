@@ -71,7 +71,7 @@ int main(int argc, char* argv[]) {
     // auto edge_weight = parlay::sequence<W>(G.n - 1, 2);
 
     auto rctree = RCTree<uint>(G.n, MST_edge_list);
-
+    rctree.build(gen);
   }
 
   gbbs::free_array(E_MST_input, G.m);

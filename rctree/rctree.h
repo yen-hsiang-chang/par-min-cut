@@ -14,14 +14,15 @@ template<class T>
 class RCTree {
 public:
   RCTree(T n, parlay::sequence<std::pair<T, T>> edge_list);
+  void build(parlay::random_generator& gen);
 
 private:
   T n, n_binary, root;
   parlay::sequence<T> child_ptr_binary;
   parlay::sequence<std::pair<T, T>> child_edges_binary, parent_binary;
-  parlay::sequence<Cluster> edge_clusters;
-  parlay::sequence<Cluster> vertex_clusters;
-  parlay::sequence<Cluster> rc_clusters;
+  parlay::sequence<Cluster<T>> edge_clusters;
+  parlay::sequence<Cluster<T>> vertex_clusters;
+  parlay::sequence<Cluster<T>> rc_clusters;
 };
 
 template<class T>
@@ -51,133 +52,146 @@ RCTree<T>::RCTree(T n, parlay::sequence<std::pair<T, T>> edge_list) : n(n) {
   
   utils::binary_tree(root, n_ternary, edge_ptr_ternary, edges_ternary,
                      n_binary, child_ptr_binary, child_edges_binary, parent_binary);
+}
 
-  // edge_clusters = parlay::sequence<Cluster>::from_function(
-  //   n - 1, [&](T i) {
-  //     return Cluster(i, parlay::sequence<Cluster*>(), nullptr,
-  //             nullptr, nullptr, edge_list[i].first, edge_list[i].second, i, i);
-  //   }
-  // );
+template<class T>
+void RCTree<T>::build(parlay::random_generator& gen) {
+  edge_clusters.resize(n_binary - 1);
+  parlay::parallel_for(0, n_binary, [&](const T& i) {
+    if (i != root) {
+      auto [p, id] = parent_binary[i];
+      edge_clusters[id] = Cluster<T>(id, nullptr, nullptr, nullptr,
+                                     nullptr, nullptr, p, i, id, id);
+    }
+  });
   
-  // vertex_clusters = parlay::sequence<Cluster>::from_function(
-  //   n, [&](T i) {
-  //     return Cluster(i, parlay::sequence<Cluster*>(), nullptr);
-  //   }
-  // );
+  vertex_clusters = parlay::sequence<Cluster<T>>::from_function(
+    n_binary, [&](const T& i) {
+      return Cluster<T>(i, nullptr, nullptr, nullptr);
+    }
+  );
 
-  // auto aux_ptr = parlay::sequence<Cluster*>::from_function(
-  //   n - 1, [&](T i) {return &edge_clusters[i];});
+  auto aux_ptr = parlay::sequence<Cluster<T>*>::from_function(
+    n_binary - 1, [&](const T& i) {return &edge_clusters[i];});
   
-  // rc_clusters.resize(n);
+  rc_clusters.resize(n_binary);
 
-  // parlay::sequence<T> active;
-  // for (T i = 1;i < n; ++i)
-  //   if (deg[i] == 1 || deg[i] == 2)
-  //     active.emplace_back(i);
+  auto deg = parlay::sequence<T>::from_function(
+    n_binary, [&](const T& i) {return child_ptr_binary[i + 1] - child_ptr_binary[i] + (i != root);});
 
-  // while(!active.empty()) {
-  //   gen();
-  //   auto rake = [&](const T& v) {
-  //     Cluster *binary_top;
-  //     parlay::sequence<Cluster*> unary;
-  //     T b0, be0;
-  //     for (T i = edge_ptr[v]; i < edge_ptr[v + 1]; ++i)
-  //     {
-  //       auto [from, to, id] = edges[i];
-  //       auto &c = aux_ptr[id];
-  //       c -> parent = &rc_clusters[v];
-  //       if (c -> is_binary())
-  //       {
-  //         binary_top = c;
-  //         b0 = (c -> boundary[0]) ^ v ^ (c -> boundary[1]);
-  //         be0 = (c -> boundary_edge[0]) ^ id ^ (c -> boundary_edge[1]);
-  //         aux_ptr[be0] = &rc_clusters[v];
-  //       }
-  //       else
-  //         unary.emplace_back(c);
-  //     }
-  //     rc_clusters[v] = Cluster(v, unary, &vertex_clusters[v],
-  //                              binary_top, b0, be0);
-  //     vertex_clusters[v].parent = &rc_clusters[v];
-  //     deg[rc_clusters[v].boundary[0]]--;
-  //     deg[v]--;
-  //   };
+  parlay::sequence<T> active[2];
+  for (T i = 0; i < n_binary; ++i)
+    if (i != root && deg[i] > 0 && deg[i] <= 2)
+      active[deg[i] - 1].emplace_back(i);
 
-  //   auto compress = [&](const T& v) {
-  //     Cluster *binary_clusters[2];
-  //     T boundary[2], boundary_edge[2];
-  //     int bsz = 0;
-  //     for (T i = edge_ptr[v]; i < edge_ptr[v + 1]; ++i)
-  //     {
-  //       auto [from, to, id] = edges[i];
-  //       auto &c = aux_ptr[id];
-  //       if (c -> is_binary())
-  //       {
-  //         binary_clusters[bsz] = c;
-  //         boundary[bsz] = (c -> boundary[0]) ^ v ^ (c -> boundary[1]);
-  //         boundary_edge[bsz] = (c -> boundary_edge[0]) ^ id ^ (c -> boundary_edge[1]);
-  //         bsz++;
-  //       }
-  //     }
-  //     if (boundary[0] != 0 && deg[boundary[0]] <= 1)  return;
-  //     if (boundary[1] != 0 && deg[boundary[1]] <= 1)  return;
-  //     std::bernoulli_distribution dist(0.5);
-  //     auto gen_l = gen[boundary[0]];
-  //     bool color_l = boundary[0] == 0 ? false : dist(gen_l);
-  //     if (color_l)  return;
-  //     auto gen_m = gen[v];
-  //     bool color_m = dist(gen_m);
-  //     if (!color_m)  return;
-  //     auto gen_r = gen[boundary[1]];
-  //     bool color_r = boundary[1] == 0 ? false : dist(gen_r);
-  //     if (color_r)  return;
-  //     parlay::sequence<Cluster*> unary;
-  //     for (T i = edge_ptr[v]; i < edge_ptr[v + 1]; ++i)
-  //     {
-  //       auto [from, to, id] = edges[i];
-  //       auto &c = aux_ptr[id];
-  //       c -> parent = &rc_clusters[v];
-  //       if (!(c -> is_binary()))
-  //         unary.emplace_back(c);
-  //     }
-  //     aux_ptr[boundary_edge[0]] = &rc_clusters[v];
-  //     aux_ptr[boundary_edge[1]] = &rc_clusters[v];
-  //     rc_clusters[v] = Cluster(v, unary, &vertex_clusters[v], binary_clusters[0], binary_clusters[1],
-  //                              boundary[0], boundary[1], boundary_edge[0], boundary_edge[1]);
-  //     vertex_clusters[v].parent = &rc_clusters[v];
-  //     deg[v] -= 2;
-  //   };
+  while(active[0].size() + active[1].size()) {
+    gen();
+    auto rake = [&](const T& v) {
+      Cluster<T> *binary_top;
+      Cluster<T> *unary[2] = {nullptr, nullptr};
+      T usz = 0, b0, be0;
+      for (T i = child_ptr_binary[v]; i < child_ptr_binary[v + 1]; ++i)
+      {
+        auto [to, id] = child_edges_binary[i];
+        auto &c = aux_ptr[id];
+        c -> parent = &rc_clusters[v];
+        unary[usz++] = c;
+      }
+      {
+        auto [to, id] = parent_binary[v];
+        auto &c = aux_ptr[id];
+        c -> parent = &rc_clusters[v];
+        binary_top = c;
+        b0 = (c -> boundary[0]) ^ v ^ (c -> boundary[1]);
+        be0 = (c -> boundary_edge[0]) ^ id ^ (c -> boundary_edge[1]);
+        aux_ptr[be0] = &rc_clusters[v];
+      }
+      rc_clusters[v] = Cluster<T>(v, unary[0], unary[1], &vertex_clusters[v],
+                                  binary_top, b0, be0);
+      vertex_clusters[v].parent = &rc_clusters[v];
+      deg[rc_clusters[v].boundary[0]]--;
+      deg[v]--;
+    };
 
-  //   for (auto v : active) {
-  //     if (deg[v] == 2)
-  //       compress(v);
-  //   }
+    auto compress = [&](const T& v) {
+      Cluster<T> *binary[2], *unary[2] = {nullptr, nullptr};
+      T boundary[2], boundary_edge[2];
+      T usz = 0;
+      for (T i = child_ptr_binary[v]; i < child_ptr_binary[v + 1]; ++i)
+      {
+        auto [to, id] = child_edges_binary[i];
+        auto &c = aux_ptr[id];
+        if (c -> is_binary())
+        {
+          binary[1] = c;
+          boundary[1] = (c -> boundary[0]) ^ v ^ (c -> boundary[1]);
+          boundary_edge[1] = (c -> boundary_edge[0]) ^ id ^ (c -> boundary_edge[1]);
+        }
+      }
+      {
+        auto [to, id] = parent_binary[v];
+        auto &c = aux_ptr[id];
+        binary[0] = c;
+        boundary[0] = (c -> boundary[0]) ^ v ^ (c -> boundary[1]);
+        boundary_edge[0] = (c -> boundary_edge[0]) ^ id ^ (c -> boundary_edge[1]);
+      }
+      if (deg[boundary[1]] <= 1)  return;
+      std::bernoulli_distribution dist(0.5);
+      auto gen_child = gen[boundary[1]];
+      bool color_child = dist(gen_child);
+      if (color_child)  return;
+      auto gen_v = gen[v];
+      bool color_v = dist(gen_v);
+      if (!color_v)  return;
+      for (T i = child_ptr_binary[v]; i < child_ptr_binary[v + 1]; ++i)
+      {
+        auto [to, id] = child_edges_binary[i];
+        auto &c = aux_ptr[id];
+        c -> parent = &rc_clusters[v];
+        if (!(c -> is_binary()))
+          unary[usz++] =c;
+      }
+      {
+        auto [to, id] = parent_binary[v];
+        auto &c = aux_ptr[id];
+        c -> parent = &rc_clusters[v];
+      }
+      aux_ptr[boundary_edge[0]] = &rc_clusters[v];
+      aux_ptr[boundary_edge[1]] = &rc_clusters[v];
+      rc_clusters[v] = Cluster<T>(v, unary[0], unary[1], &vertex_clusters[v],
+                                  binary[0], binary[1],
+                                  boundary[0], boundary[1], boundary_edge[0], boundary_edge[1]);
+      vertex_clusters[v].parent = &rc_clusters[v];
+      deg[v] -= 2;
+    };
 
-  //   for (auto v : active) {
-  //     if (deg[v] == 1)
-  //       rake(v);
-  //   }
+    for (auto v : active[1])
+        compress(v);
 
-  //   active.clear();
-  //   for (T i = 1;i < n; ++i)
-  //     if (deg[i] == 1 || deg[i] == 2)
-  //       active.emplace_back(i);
-  // }
+    for (auto v : active[0])
+        rake(v);
 
-  // auto finalize = [&](const T& v) {
-  //     parlay::sequence<Cluster*> unary;
-  //     for (T i = edge_ptr[v]; i < edge_ptr[v + 1]; ++i)
-  //     {
-  //       auto [from, to, id] = edges[i];
-  //       auto &c = aux_ptr[id];
-  //       c -> parent = &rc_clusters[v];
-  //       unary.emplace_back(c);
-  //     }
-  //     rc_clusters[v] = Cluster(v, unary, &vertex_clusters[v]);
-  //     vertex_clusters[v].parent = &rc_clusters[v];
-  //     deg[v] = 0;
-  //   };
+    active[0].clear();
+    active[1].clear();
+    for (T i = 0; i < n_binary; ++i)
+      if (i != root && deg[i] > 0 && deg[i] <= 2)
+        active[deg[i] - 1].emplace_back(i);
+  }
 
-  // finalize(0);
-  // rc_clusters[0].print();
+  auto finalize = [&](const T& v) {
+    Cluster<T> *unary[2] = {nullptr, nullptr};
+    T usz = 0;
+    for (T i = child_ptr_binary[v]; i < child_ptr_binary[v + 1]; ++i) {
+      auto [to, id] = child_edges_binary[i];
+      auto &c = aux_ptr[id];
+      c -> parent = &rc_clusters[v];
+      unary[usz++] = c;
+    }
+    rc_clusters[v] = Cluster(v, unary[0], unary[1], &vertex_clusters[v]);
+    vertex_clusters[v].parent = &rc_clusters[v];
+    deg[v] = 0;
+  };
+
+  finalize(root);
+  rc_clusters[root].print();
 }
