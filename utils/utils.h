@@ -1,6 +1,5 @@
 #pragma once
 
-#include <iostream>
 #include <utility>
 
 #include "parlay/sequence.h"
@@ -17,7 +16,7 @@ void general_sort(parlay::sequence<T> &A, const BinPred& f) {
 }
 
 template <class T>
-void ternary_tree(const T& n, const T& m, const parlay::sequence<T>& edge_ptr, 
+T ternary_tree(const T& n, const T& m, const parlay::sequence<T>& edge_ptr, 
                   const parlay::sequence<std::tuple<T, T, T>>& edges, const parlay::sequence<T>& deg,
                   T& n_ternary, T& m_ternary, parlay::sequence<T>& edge_ptr_ternary, 
                   parlay::sequence<std::tuple<T, T, T>>& edges_ternary, parlay::sequence<T>& deg_ternary) {
@@ -99,6 +98,68 @@ void ternary_tree(const T& n, const T& m, const parlay::sequence<T>& edge_ptr,
       }
     }
   });
+
+  return parlay::find(deg, 1) - deg.begin();
+}
+
+template <class T>
+void binary_tree(const T& root, const T& n_ternary, const T& m_ternary, const parlay::sequence<T>& edge_ptr_ternary, 
+                 const parlay::sequence<std::tuple<T, T, T>>& edges_ternary, const parlay::sequence<T>& deg_ternary,
+                 T& n_binary, T& m_binary, parlay::sequence<T>& child_ptr_binary, 
+                 parlay::sequence<std::pair<T, T>>& child_edges_binary, parlay::sequence<std::pair<T, T>>& parent_binary) {
+  
+  n_binary = n_ternary;
+  m_binary = m_ternary / 2;
+  child_ptr_binary = parlay::sequence<T>::from_function(
+    n_binary, [&](const T& i) {return i == root ? deg_ternary[i] : deg_ternary[i] - 1;});
+  parlay::scan_inplace(child_ptr_binary);
+  child_edges_binary.resize(m_binary);
+  parent_binary.resize(n_binary);
+  parlay::sequence<T> val(m_ternary), prv(m_ternary), nxtval(m_ternary), nxtprv(m_ternary), minval(n_binary);
+  parlay::parallel_for(0, m_ternary, [&](const T& i) {
+    auto [u, v, id] = edges_ternary[i];
+    val[i] = 1;
+    for(T j = edge_ptr_ternary[v]; j < edge_ptr_ternary[v + 1]; ++j) {
+      if (std::get<1>(edges_ternary[j]) == u) {
+        prv[j + 1 == edge_ptr_ternary[v + 1] ? edge_ptr_ternary[v] : j + 1] = i; 
+        break;
+      }
+    }
+  });
+  prv[edge_ptr_ternary[root]] = m_ternary;
+  for (T step = 1; step < m_ternary; step <<= 1) {
+    parlay::parallel_for(0, m_ternary, [&](const T& i) {
+      if (prv[i] != m_ternary) {
+        nxtprv[i] = prv[prv[i]];
+        nxtval[i] = val[i] + val[prv[i]];
+      } else {
+        nxtprv[i] = prv[i];
+        nxtval[i] = val[i];
+      }
+    });
+    val.swap(nxtval);
+    prv.swap(nxtprv);
+  }
+  parlay::parallel_for(0, n_ternary, [&](const T& i) {
+    T res = m_ternary;
+    for(T j = edge_ptr_ternary[i]; j < edge_ptr_ternary[i + 1]; ++j) {
+      res = std::min(res, val[j]);
+    }
+    minval[i] = res;
+  });
+  
+  parlay::parallel_for(0, n_ternary, [&](const T& i) {
+    T idx = child_ptr_binary[i];
+    for(T j = edge_ptr_ternary[i]; j < edge_ptr_ternary[i + 1]; ++j) {
+      auto [u, v, id] = edges_ternary[j];
+      if (minval[u] < minval[v]) {
+        child_edges_binary[idx++] = std::make_pair(v, id);
+      } else {
+        parent_binary[i] = std::make_pair(v, id);
+      }
+    }
+  });
+  parent_binary[root] = std::make_pair(n_binary, m_binary);
 }
 
 } // namespace utils

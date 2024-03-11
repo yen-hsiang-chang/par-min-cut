@@ -20,6 +20,9 @@ public:
 private:
   uint n, m;
   uint n_ternary, m_ternary;
+  uint root, n_binary, m_binary;
+  parlay::sequence<uint> child_ptr_binary;
+  parlay::sequence<std::pair<uint, uint>> child_edges_binary, parent_binary;
   parlay::sequence<uint> edge_ptr, edge_ptr_ternary;
   parlay::sequence<std::tuple<uint, uint, uint>> edges, edges_ternary;
   parlay::sequence<Cluster> edge_clusters;
@@ -57,9 +60,12 @@ RCTree<T>::RCTree(uint n, parlay::sequence<std::pair<uint, uint>> edge_list,
   
   parlay::sequence<uint> deg_ternary;
   
-  utils::ternary_tree(n, m, edge_ptr, edges, deg,
-                      n_ternary, m_ternary, edge_ptr_ternary, edges_ternary, deg_ternary);
+  root = utils::ternary_tree(n, m, edge_ptr, edges, deg,
+                             n_ternary, m_ternary, edge_ptr_ternary, edges_ternary, deg_ternary);
   
+  utils::binary_tree(root, n_ternary, m_ternary, edge_ptr_ternary, edges_ternary, deg_ternary,
+                     n_binary, m_binary, child_ptr_binary, child_edges_binary, parent_binary);
+
   edge_clusters = parlay::sequence<Cluster>::from_function(
     n - 1, [&](uint i) {
       return Cluster(i, parlay::sequence<Cluster*>(), nullptr,
