@@ -21,6 +21,7 @@ int main(int argc, char* argv[]) {
   parlay::random_generator gen(seed);
 
   // read the graph, assume {u, v} only has (u, v) or (v, u)
+  // TODO: need to be changed
   auto G = gbbs::gbbs_io::read_weighted_symmetric_graph<W>(argv[1], false, false);
 
   // (v, Exp(w))
@@ -33,7 +34,7 @@ int main(int argc, char* argv[]) {
     // Step 1: Generate weighted random edge ordering
     auto weighted_ordering_time = -omp_get_wtime();
     gen();
-    parlay::parallel_for(0, G.m, [&](const size_t& i) {
+    parlay::parallel_for(0, G.m, [&](const uint& i) {
       auto [v, w] = G.e0[i];
       std::exponential_distribution<double> exponential(w);
       auto local_rand = gen[i];
@@ -65,13 +66,20 @@ int main(int argc, char* argv[]) {
                                    });
 
     auto MST_edge_list = parlay::sequence<std::pair<uint, uint>>::from_function(
-      E_MST.size(), [&](size_t i) {
+      E_MST.size(), [&](const uint& i) {
         auto [u, v, _] = E_MST[i];
         return std::make_pair(u, v);
       });
     
-    auto vertex_weight = parlay::sequence<W>(G.n, 1);
-    auto edge_weight = parlay::sequence<W>(G.n - 1, 2);
+    auto vertex_weight = parlay::sequence<Contraction_Type<W>>(G.n);
+    parlay::parallel_for(0, G.n, [&](const uint& i) {
+      auto get_weight = [&](size_t j) {
+        return std::get<1>(G.e0[G.v_data[i].offset + j]); 
+      };
+      auto weights = parlay::delayed_seq<W>(G.v_data[i].degree, get_weight);
+      vertex_weight[i] = Contraction_Type<W>(parlay::reduce(weights), 0, true);
+    });
+    auto edge_weight = parlay::sequence<Contraction_Type<double>>(G.n - 1, Contraction_Type<W>(0, 0, false));
 
     auto rctree = Contraction_RCTree<uint, W>(G.n, MST_edge_list);
     rctree.build(gen, vertex_weight, edge_weight);

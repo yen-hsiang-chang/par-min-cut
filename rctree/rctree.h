@@ -16,13 +16,13 @@ public:
   RCTree(T n, const parlay::sequence<std::pair<T, T>>& edge_list);
   void build(parlay::random_generator& gen, const parlay::sequence<W>& vertex_value,
              const parlay::sequence<W>& edge_value);
-  virtual W f_nullary(const Cluster<T, W>& c) = 0;
-  virtual W f_unary(const Cluster<T, W>& c) = 0;
-  virtual W f_binary(const Cluster<T, W>& c) = 0;
+  virtual W f_nullary(Cluster<T, W> *c) = 0;
+  virtual W f_unary(Cluster<T, W> *c) = 0;
+  virtual W f_binary(Cluster<T, W> *c) = 0;
   virtual W vertex_base() = 0;
   virtual W edge_base() = 0;
+  void reevaluate(Cluster<T, W> *c);
 
-private:
   T n, n_binary, root;
   parlay::sequence<T> child_ptr_binary;
   parlay::sequence<std::pair<T, T>> child_edges_binary, parent_binary;
@@ -126,7 +126,7 @@ void RCTree<T, W>::build(parlay::random_generator& gen,
       vertex_clusters[v].parent = &rc_clusters[v];
       deg[rc_clusters[v].boundary[0]]--;
       deg[v]--;
-      rc_clusters[v].setval(f_unary(rc_clusters[v]));
+      rc_clusters[v].setval(f_unary(&rc_clusters[v]));
     };
 
     auto compress = [&](const T& v) {
@@ -179,7 +179,7 @@ void RCTree<T, W>::build(parlay::random_generator& gen,
                                      boundary_edge[0], boundary_edge[1]);
       vertex_clusters[v].parent = &rc_clusters[v];
       deg[v] -= 2;
-      rc_clusters[v].setval(f_binary(rc_clusters[v]));
+      rc_clusters[v].setval(f_binary(&rc_clusters[v]));
     };
 
     for (auto v : active[1])
@@ -207,9 +207,22 @@ void RCTree<T, W>::build(parlay::random_generator& gen,
     rc_clusters[v] = Cluster(v, unary[0], unary[1], &vertex_clusters[v]);
     vertex_clusters[v].parent = &rc_clusters[v];
     deg[v] = 0;
-    rc_clusters[v].setval(f_nullary(rc_clusters[v]));
+    rc_clusters[v].setval(f_nullary(&rc_clusters[v]));
   };
 
   finalize(root);
   rc_clusters[root].print();
+}
+
+template <class T, class W>
+void RCTree<T, W>::reevaluate(Cluster<T, W> *c) {
+  while (c -> parent != nullptr) {
+    c = c -> parent;
+    switch(c -> cluster_type) {
+      case 0: c -> setval(f_nullary(c)); break;
+      case 1: c -> setval(f_unary(c)); break;
+      case 2: c -> setval(f_binary(c)); break;
+      default: assert(false);
+    }
+  }
 }
