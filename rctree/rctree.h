@@ -10,23 +10,29 @@
 
 #include "cluster.h"
 
-template<class T>
+template <class T, class W>
 class RCTree {
 public:
-  RCTree(T n, parlay::sequence<std::pair<T, T>> edge_list);
-  void build(parlay::random_generator& gen);
+  RCTree(T n, const parlay::sequence<std::pair<T, T>>& edge_list);
+  void build(parlay::random_generator& gen, const parlay::sequence<W>& vertex_value,
+             const parlay::sequence<W>& edge_value);
+  virtual W f_nullary(const Cluster<T, W>& c) = 0;
+  virtual W f_unary(const Cluster<T, W>& c) = 0;
+  virtual W f_binary(const Cluster<T, W>& c) = 0;
+  virtual W vertex_base() = 0;
+  virtual W edge_base() = 0;
 
 private:
   T n, n_binary, root;
   parlay::sequence<T> child_ptr_binary;
   parlay::sequence<std::pair<T, T>> child_edges_binary, parent_binary;
-  parlay::sequence<Cluster<T>> edge_clusters;
-  parlay::sequence<Cluster<T>> vertex_clusters;
-  parlay::sequence<Cluster<T>> rc_clusters;
+  parlay::sequence<Cluster<T, W>> edge_clusters;
+  parlay::sequence<Cluster<T, W>> vertex_clusters;
+  parlay::sequence<Cluster<T, W>> rc_clusters;
 };
 
-template<class T>
-RCTree<T>::RCTree(T n, parlay::sequence<std::pair<T, T>> edge_list) : n(n) {
+template <class T, class W>
+RCTree<T, W>::RCTree(T n, const parlay::sequence<std::pair<T, T>>& edge_list) : n(n) {
   T n_ternary;
   parlay::sequence<T> edge_ptr(n + 1), edge_ptr_ternary;
   parlay::sequence<std::tuple<T, T, T>> edges(2 * (n - 1)), edges_ternary;
@@ -54,24 +60,33 @@ RCTree<T>::RCTree(T n, parlay::sequence<std::pair<T, T>> edge_list) : n(n) {
                      n_binary, child_ptr_binary, child_edges_binary, parent_binary);
 }
 
-template<class T>
-void RCTree<T>::build(parlay::random_generator& gen) {
+template <class T, class W>
+void RCTree<T, W>::build(parlay::random_generator& gen, 
+                         const parlay::sequence<W>& vertex_value,
+                         const parlay::sequence<W>& edge_value) {
   edge_clusters.resize(n_binary - 1);
   parlay::parallel_for(0, n_binary, [&](const T& i) {
     if (i != root) {
       auto [p, id] = parent_binary[i];
-      edge_clusters[id] = Cluster<T>(id, nullptr, nullptr, nullptr,
-                                     nullptr, nullptr, p, i, id, id);
+      edge_clusters[id] = Cluster<T, W>(id, nullptr, nullptr, nullptr,
+                                        nullptr, nullptr, p, i, id, id);
+      if (id < n - 1)
+        edge_clusters[id].setval(edge_value[id]);
+      else 
+        edge_clusters[id].setval(edge_base());
     }
   });
   
-  vertex_clusters = parlay::sequence<Cluster<T>>::from_function(
-    n_binary, [&](const T& i) {
-      return Cluster<T>(i, nullptr, nullptr, nullptr);
-    }
-  );
+  vertex_clusters.resize(n_binary);
+  parlay::parallel_for(0, n_binary, [&](const T& i) {
+    vertex_clusters[i] = Cluster<T, W>(i, nullptr, nullptr, nullptr);
+    if (i < n)
+      vertex_clusters[i].setval(vertex_value[i]);
+    else
+      vertex_clusters[i].setval(vertex_base());
+  });
 
-  auto aux_ptr = parlay::sequence<Cluster<T>*>::from_function(
+  auto aux_ptr = parlay::sequence<Cluster<T, W>*>::from_function(
     n_binary - 1, [&](const T& i) {return &edge_clusters[i];});
   
   rc_clusters.resize(n_binary);
@@ -87,8 +102,8 @@ void RCTree<T>::build(parlay::random_generator& gen) {
   while(active[0].size() + active[1].size()) {
     gen();
     auto rake = [&](const T& v) {
-      Cluster<T> *binary_top;
-      Cluster<T> *unary[2] = {nullptr, nullptr};
+      Cluster<T, W> *binary_top;
+      Cluster<T, W> *unary[2] = {nullptr, nullptr};
       T usz = 0, b0, be0;
       for (T i = child_ptr_binary[v]; i < child_ptr_binary[v + 1]; ++i)
       {
@@ -106,15 +121,16 @@ void RCTree<T>::build(parlay::random_generator& gen) {
         be0 = (c -> boundary_edge[0]) ^ id ^ (c -> boundary_edge[1]);
         aux_ptr[be0] = &rc_clusters[v];
       }
-      rc_clusters[v] = Cluster<T>(v, unary[0], unary[1], &vertex_clusters[v],
-                                  binary_top, b0, be0);
+      rc_clusters[v] = Cluster<T, W>(v, unary[0], unary[1], &vertex_clusters[v],
+                                     binary_top, b0, be0);
       vertex_clusters[v].parent = &rc_clusters[v];
       deg[rc_clusters[v].boundary[0]]--;
       deg[v]--;
+      rc_clusters[v].setval(f_unary(rc_clusters[v]));
     };
 
     auto compress = [&](const T& v) {
-      Cluster<T> *binary[2], *unary[2] = {nullptr, nullptr};
+      Cluster<T, W> *binary[2], *unary[2] = {nullptr, nullptr};
       T boundary[2], boundary_edge[2];
       T usz = 0;
       for (T i = child_ptr_binary[v]; i < child_ptr_binary[v + 1]; ++i)
@@ -158,11 +174,12 @@ void RCTree<T>::build(parlay::random_generator& gen) {
       }
       aux_ptr[boundary_edge[0]] = &rc_clusters[v];
       aux_ptr[boundary_edge[1]] = &rc_clusters[v];
-      rc_clusters[v] = Cluster<T>(v, unary[0], unary[1], &vertex_clusters[v],
-                                  binary[0], binary[1],
-                                  boundary[0], boundary[1], boundary_edge[0], boundary_edge[1]);
+      rc_clusters[v] = Cluster<T, W>(v, unary[0], unary[1], &vertex_clusters[v],
+                                     binary[0], binary[1], boundary[0], boundary[1],
+                                     boundary_edge[0], boundary_edge[1]);
       vertex_clusters[v].parent = &rc_clusters[v];
       deg[v] -= 2;
+      rc_clusters[v].setval(f_binary(rc_clusters[v]));
     };
 
     for (auto v : active[1])
@@ -179,7 +196,7 @@ void RCTree<T>::build(parlay::random_generator& gen) {
   }
 
   auto finalize = [&](const T& v) {
-    Cluster<T> *unary[2] = {nullptr, nullptr};
+    Cluster<T, W> *unary[2] = {nullptr, nullptr};
     T usz = 0;
     for (T i = child_ptr_binary[v]; i < child_ptr_binary[v + 1]; ++i) {
       auto [to, id] = child_edges_binary[i];
@@ -190,6 +207,7 @@ void RCTree<T>::build(parlay::random_generator& gen) {
     rc_clusters[v] = Cluster(v, unary[0], unary[1], &vertex_clusters[v]);
     vertex_clusters[v].parent = &rc_clusters[v];
     deg[v] = 0;
+    rc_clusters[v].setval(f_nullary(rc_clusters[v]));
   };
 
   finalize(root);
