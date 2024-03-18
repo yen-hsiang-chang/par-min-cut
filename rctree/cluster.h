@@ -19,7 +19,7 @@ public:
   void print() const;
   void setval(const W& rval) {val = rval;}
 
-  Cluster *parent, *unary_cluster[2], *binary_cluster[2], *representative_cluster;
+  Cluster<T, W> *parent, *unary_cluster[2], *binary_cluster[2], *representative_cluster;
   T boundary[2], boundary_edge[2];
   // representative is the vertex/edge id if the cluster is an original vertex/edge.
   T representative;

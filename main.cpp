@@ -21,21 +21,22 @@ int main(int argc, char* argv[]) {
   parlay::random_generator gen(seed);
 
   // read the graph, assume {u, v} only has (u, v) or (v, u)
-  // TODO: need to be changed
-  auto G = gbbs::gbbs_io::read_weighted_symmetric_graph<W>(argv[1], false, false);
+  auto G_dir = gbbs::gbbs_io::read_weighted_symmetric_graph<W>(argv[1], false, false);
+
+  auto G_undir = gbbs::gbbs_io::edge_list_to_symmetric_graph<W>(gbbs::to_edge_array<W>(G_dir));
 
   // (v, Exp(w))
-  auto E_MST_input = parlay::sequence<std::tuple<uint, double>>(G.m);
+  auto E_MST_input = parlay::sequence<std::tuple<uint, double>>(G_dir.m);
 
   auto G_MST_input = gbbs::symmetric_graph<gbbs::symmetric_vertex, double>(
-      G.v_data, G.n, G.m, [](){}, E_MST_input.data());
+      G_dir.v_data, G_dir.n, G_dir.m, [](){}, E_MST_input.data());
 
   for(int iter = 0;iter < 1;++iter) {
     // Step 1: Generate weighted random edge ordering
     auto weighted_ordering_time = -omp_get_wtime();
     gen();
-    parlay::parallel_for(0, G.m, [&](const uint& i) {
-      auto [v, w] = G.e0[i];
+    parlay::parallel_for(0, G_dir.m, [&](const uint& i) {
+      auto [v, w] = G_dir.e0[i];
       std::exponential_distribution<double> exponential(w);
       auto local_rand = gen[i];
       E_MST_input[i] = std::make_tuple(v, exponential(local_rand));
@@ -53,7 +54,7 @@ int main(int argc, char* argv[]) {
     std::cout << "MST Time: "
               << mst_time << " seconds" << std::endl;
     
-    if (E_MST.size() + 1 != G.n)
+    if (E_MST.size() + 1 != G_dir.n)
     {
       std::cout << "min cut = 0." << std::endl; 
       break;
@@ -71,17 +72,20 @@ int main(int argc, char* argv[]) {
         return std::make_pair(u, v);
       });
     
-    auto vertex_weight = parlay::sequence<Contraction_Type<W>>(G.n);
-    parlay::parallel_for(0, G.n, [&](const uint& i) {
+    auto vertex_weight = parlay::sequence<Contraction_Type<W>>(G_undir.n);
+    parlay::parallel_for(0, G_undir.n, [&](const uint& i) {
       auto get_weight = [&](size_t j) {
-        return std::get<1>(G.e0[G.v_data[i].offset + j]); 
+        return std::get<1>(G_undir.e0[G_undir.v_data[i].offset + j]); 
       };
-      auto weights = parlay::delayed_seq<W>(G.v_data[i].degree, get_weight);
-      vertex_weight[i] = Contraction_Type<W>(parlay::reduce(weights), 0, true);
+      auto weights = parlay::delayed_seq<W>(G_undir.v_data[i].degree, get_weight);
+      vertex_weight[i] = Contraction_Type<W>(parlay::reduce(weights), 0, 0, 0, true);
     });
-    auto edge_weight = parlay::sequence<Contraction_Type<double>>(G.n - 1, Contraction_Type<W>(0, 0, false));
+    auto edge_weight = parlay::sequence<Contraction_Type<double>>::from_function(
+      G_undir.n - 1, [&](const uint& i) {
+        return Contraction_Type<W>(0, 0, i, i, false);
+      }); 
 
-    auto rctree = Contraction_RCTree<uint, W>(G.n, MST_edge_list);
+    auto rctree = Contraction_RCTree<uint, W>(G_undir.n, MST_edge_list);
     rctree.build(gen, vertex_weight, edge_weight);
     contraction_rctree_time += omp_get_wtime();
 

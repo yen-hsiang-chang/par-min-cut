@@ -3,10 +3,11 @@
 #include <utility>
 
 #include "parlay/sequence.h"
+#include "gbbs/macros.h"
 // They forgot to put pragma once.
 #include "../pbbsbench/benchmarks/comparisonSort/ips4o/sort.h"
 
-#define uint unsigned int
+#define uint gbbs::uintE
 
 namespace utils {
 
