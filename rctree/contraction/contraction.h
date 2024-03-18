@@ -11,6 +11,16 @@ struct Contraction_Type {
                    t(t), b(b), mt(mt), mb(mb), joined(joined) {}
 };
 
+template <class W>
+struct Contraction_MixOp {
+  size_t timestamp;
+  int type;
+  uint u;
+  W w;
+  Contraction_MixOp(size_t timestamp = 0, int type = 0, uint u = 0, W w = 0) :
+                    timestamp(timestamp), type(type), u(u), w(w) {}
+};
+
 template <class T, class W>
 class Contraction_RCTree : public RCTree<T, Contraction_Type<W>> {
 public:
@@ -68,7 +78,7 @@ Contraction_Type<W> Contraction_RCTree<T, W>::f_binary(Cluster<T, Contraction_Ty
   }
   if (c -> binary_cluster[1] -> val.joined)
     return Contraction_Type<W>(c -> binary_cluster[0] -> val.t, 
-                               c -> binary_cluster[0] -> val.b + c -> binary_cluster[1] -> val.b + s, 
+                               c -> binary_cluster[0] -> val.b + c -> binary_cluster[1] -> val.t + s, 
                                std::max(c -> binary_cluster[0] -> val.mt, c -> binary_cluster[0] -> val.mb),
                                std::max(c -> binary_cluster[1] -> val.mt, c -> binary_cluster[1] -> val.mb), false);
   return Contraction_Type<W>(c -> binary_cluster[0] -> val.t, c -> binary_cluster[1] -> val.b, 
@@ -89,13 +99,13 @@ Contraction_Type<W> Contraction_RCTree<T, W>::edge_base() {
 template <class T, class W>
 void Contraction_RCTree<T, W>::subtract_vertex_weight(T u, W w) {
   RCTree<T, Contraction_Type<W>>::vertex_clusters[u].val.t -= w;
-  reevaluate(&RCTree<T, Contraction_Type<W>>::vertex_clusters[u]);
+  RCTree<T, Contraction_Type<W>>::reevaluate(&RCTree<T, Contraction_Type<W>>::vertex_clusters[u]);
 }
 
 template <class T, class W>
 void Contraction_RCTree<T, W>::join_edge(T e) {
-  RCTree<T, Contraction_Type<W>>::edge_clusters[e].joined = true;
-  reevaluate(&RCTree<T, Contraction_Type<W>>::edge_clusters[e]);
+  RCTree<T, Contraction_Type<W>>::edge_clusters[e].val.joined = true;
+  RCTree<T, Contraction_Type<W>>::reevaluate(&RCTree<T, Contraction_Type<W>>::edge_clusters[e]);
 }
 
 template <class T, class W>

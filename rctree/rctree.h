@@ -211,12 +211,12 @@ void RCTree<T, W>::build(parlay::random_generator& gen,
   };
 
   finalize(root);
-  rc_clusters[root].print();
+  // rc_clusters[root].print();
 }
 
 template <class T, class W>
 void RCTree<T, W>::reevaluate(Cluster<T, W> *c) {
-  while (c -> parent != nullptr) {
+  while (c -> parent) {
     c = c -> parent;
     switch(c -> cluster_type) {
       case 0: c -> setval(f_nullary(c)); break;
