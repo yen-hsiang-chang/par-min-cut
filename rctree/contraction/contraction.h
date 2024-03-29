@@ -9,6 +9,9 @@ struct Contraction_Type {
   bool joined;
   Contraction_Type(W t = 0, W b = 0, uint mt = 0, uint mb = 0, bool joined = false) :
                    t(t), b(b), mt(mt), mb(mb), joined(joined) {}
+  Contraction_Type<W> operator+(const Contraction_Type<W>& rhs) const {
+    return Contraction_Type<W>(t - rhs.t, b - rhs.b, 0, 0, joined && rhs.joined);
+  }
 };
 
 template <class W>
@@ -36,54 +39,55 @@ public:
   W query_vertex_sum(T u);
   void extract_max_path(Cluster<T, Contraction_Type<W>> *c, std::pair<uint, uint>& mx);
   uint query_max_path(T u, T v);
+  // void batch_operations(const parlay::sequence<Contraction_MixOp>& ops);
 };
 
 template <class T, class W>
 Contraction_Type<W> Contraction_RCTree<T, W>::f_nullary(Cluster<T, Contraction_Type<W>> *c) {
-  W s = c -> representative_cluster -> val.t;
+  W s = c -> get_representative_cluster() -> get_val().t;
   for (int i = 0;i < 2; ++i)
-    if (c -> unary_cluster[i])
-      s += c -> unary_cluster[i] -> val.t;
+    if (c -> get_unary_cluster(i))
+      s += c -> get_unary_cluster(i) -> get_val().t;
   return Contraction_Type<W>(s, 0, 0, 0, true);
 }
 
 template <class T, class W>
 Contraction_Type<W> Contraction_RCTree<T, W>::f_unary(Cluster<T, Contraction_Type<W>> *c) {
-  if (!c -> binary_cluster[0] -> val.joined)  
-    return Contraction_Type<W>(c -> binary_cluster[0] -> val.t, 0, 
-                               std::max(c -> binary_cluster[0] -> val.mt, c -> binary_cluster[0] -> val.mb), 0, true);
-  W s = c -> representative_cluster -> val.t;
+  if (!c -> get_binary_top_cluster() -> get_val().joined)  
+    return Contraction_Type<W>(c -> get_binary_top_cluster() -> get_val().t, 0, 
+                               std::max(c -> get_binary_top_cluster() -> get_val().mt, c -> get_binary_top_cluster() -> get_val().mb), 0, true);
+  W s = c -> get_representative_cluster() -> get_val().t;
   for (int i = 0;i < 2; ++i)
-    if (c -> unary_cluster[i])
-      s += c -> unary_cluster[i] -> val.t;
-  return Contraction_Type<W>(s + c -> binary_cluster[0] -> val.t, 0, 
-                             std::max(c -> binary_cluster[0] -> val.mt, c -> binary_cluster[0] -> val.mb), 0, true);
+    if (c -> get_unary_cluster(i))
+      s += c -> get_unary_cluster(i) -> get_val().t;
+  return Contraction_Type<W>(s + c -> get_binary_top_cluster() -> get_val().t, 0, 
+                             std::max(c -> get_binary_top_cluster() -> get_val().mt, c -> get_binary_top_cluster() -> get_val().mb), 0, true);
 }
 
 template <class T, class W>
 Contraction_Type<W> Contraction_RCTree<T, W>::f_binary(Cluster<T, Contraction_Type<W>> *c) {
-  W s = c -> representative_cluster -> val.t;
+  W s = c -> get_representative_cluster() -> get_val().t;
   for (int i = 0;i < 2; ++i)
-    if (c -> unary_cluster[i])
-      s += c -> unary_cluster[i] -> val.t;
-  if (c -> binary_cluster[0] -> val.joined) {
-    if (c -> binary_cluster[1] -> val.joined)
-      return Contraction_Type<W>(s + c -> binary_cluster[0] -> val.t + c -> binary_cluster[1] -> val.t, 0, 
-                                 std::max(c -> binary_cluster[0] -> val.mt, c -> binary_cluster[0] -> val.mb),
-                                 std::max(c -> binary_cluster[1] -> val.mt, c -> binary_cluster[1] -> val.mb), true);
-    return Contraction_Type<W>(c -> binary_cluster[0] -> val.t + c -> binary_cluster[1] -> val.t + s, 
-                               c -> binary_cluster[1] -> val.b, 
-                               std::max(c -> binary_cluster[0] -> val.mt, c -> binary_cluster[0] -> val.mb),
-                               std::max(c -> binary_cluster[1] -> val.mt, c -> binary_cluster[1] -> val.mb), false);
+    if (c -> get_unary_cluster(i))
+      s += c -> get_unary_cluster(i) -> get_val().t;
+  if (c -> get_binary_top_cluster() -> get_val().joined) {
+    if (c -> get_binary_bottom_cluster() -> get_val().joined)
+      return Contraction_Type<W>(s + c -> get_binary_top_cluster() -> get_val().t + c -> get_binary_bottom_cluster() -> get_val().t, 0, 
+                                 std::max(c -> get_binary_top_cluster() -> get_val().mt, c -> get_binary_top_cluster() -> get_val().mb),
+                                 std::max(c -> get_binary_bottom_cluster() -> get_val().mt, c -> get_binary_bottom_cluster() -> get_val().mb), true);
+    return Contraction_Type<W>(c -> get_binary_top_cluster() -> get_val().t + c -> get_binary_bottom_cluster() -> get_val().t + s, 
+                               c -> get_binary_bottom_cluster() -> get_val().b, 
+                               std::max(c -> get_binary_top_cluster() -> get_val().mt, c -> get_binary_top_cluster() -> get_val().mb),
+                               std::max(c -> get_binary_bottom_cluster() -> get_val().mt, c -> get_binary_bottom_cluster() -> get_val().mb), false);
   }
-  if (c -> binary_cluster[1] -> val.joined)
-    return Contraction_Type<W>(c -> binary_cluster[0] -> val.t, 
-                               c -> binary_cluster[0] -> val.b + c -> binary_cluster[1] -> val.t + s, 
-                               std::max(c -> binary_cluster[0] -> val.mt, c -> binary_cluster[0] -> val.mb),
-                               std::max(c -> binary_cluster[1] -> val.mt, c -> binary_cluster[1] -> val.mb), false);
-  return Contraction_Type<W>(c -> binary_cluster[0] -> val.t, c -> binary_cluster[1] -> val.b, 
-                             std::max(c -> binary_cluster[0] -> val.mt, c -> binary_cluster[0] -> val.mb),
-                             std::max(c -> binary_cluster[1] -> val.mt, c -> binary_cluster[1] -> val.mb), false);
+  if (c -> get_binary_bottom_cluster() -> get_val().joined)
+    return Contraction_Type<W>(c -> get_binary_top_cluster() -> get_val().t, 
+                               c -> get_binary_top_cluster() -> get_val().b + c -> get_binary_bottom_cluster() -> get_val().t + s, 
+                               std::max(c -> get_binary_top_cluster() -> get_val().mt, c -> get_binary_top_cluster() -> get_val().mb),
+                               std::max(c -> get_binary_bottom_cluster() -> get_val().mt, c -> get_binary_bottom_cluster() -> get_val().mb), false);
+  return Contraction_Type<W>(c -> get_binary_top_cluster() -> get_val().t, c -> get_binary_bottom_cluster() -> get_val().b, 
+                             std::max(c -> get_binary_top_cluster() -> get_val().mt, c -> get_binary_top_cluster() -> get_val().mb),
+                             std::max(c -> get_binary_bottom_cluster() -> get_val().mt, c -> get_binary_bottom_cluster() -> get_val().mb), false);
 }
 
 template <class T, class W>
@@ -98,56 +102,60 @@ Contraction_Type<W> Contraction_RCTree<T, W>::edge_base() {
 
 template <class T, class W>
 void Contraction_RCTree<T, W>::subtract_vertex_weight(T u, W w) {
-  RCTree<T, Contraction_Type<W>>::vertex_clusters[u].val.t -= w;
+  auto val = RCTree<T, Contraction_Type<W>>::vertex_clusters[u].get_val();
+  val.t -= w;
+  RCTree<T, Contraction_Type<W>>::vertex_clusters[u].set_val(val);
   RCTree<T, Contraction_Type<W>>::reevaluate(&RCTree<T, Contraction_Type<W>>::vertex_clusters[u]);
 }
 
 template <class T, class W>
 void Contraction_RCTree<T, W>::join_edge(T e) {
-  RCTree<T, Contraction_Type<W>>::edge_clusters[e].val.joined = true;
+  auto val = RCTree<T, Contraction_Type<W>>::edge_clusters[e].get_val();
+  val.joined = true;
+  RCTree<T, Contraction_Type<W>>::edge_clusters[e].set_val(val);
   RCTree<T, Contraction_Type<W>>::reevaluate(&RCTree<T, Contraction_Type<W>>::edge_clusters[e]);
 }
 
 template <class T, class W>
 W Contraction_RCTree<T, W>::query_vertex_sum(T u) {
-  auto c = RCTree<T, Contraction_Type<W>>::vertex_clusters[u].parent;
+  auto c = RCTree<T, Contraction_Type<W>>::vertex_clusters[u].get_parent_cluster();
   while (true) {
-    if (c -> binary_cluster[0] && c -> binary_cluster[0] -> val.joined) {
-      c = RCTree<T, Contraction_Type<W>>::vertex_clusters[c -> boundary[0]].parent;
+    if (c -> get_binary_top_cluster() && c -> get_binary_top_cluster() -> get_val().joined) {
+      c = RCTree<T, Contraction_Type<W>>::vertex_clusters[c -> get_top_boundary()].get_parent_cluster();
       continue;
     }
-    if (c -> binary_cluster[1] && c -> binary_cluster[1] -> val.joined) {
-      c = RCTree<T, Contraction_Type<W>>::vertex_clusters[c -> boundary[1]].parent;
+    if (c -> get_binary_bottom_cluster() && c -> get_binary_bottom_cluster() -> get_val().joined) {
+      c = RCTree<T, Contraction_Type<W>>::vertex_clusters[c -> get_bottom_boundary()].get_parent_cluster();
       continue;
     }
     break;
   }
-  W s = c -> representative_cluster -> val.t;
-  for (int i = 0;i < 2; ++i)
-    if (c -> unary_cluster[i])
-      s += c -> unary_cluster[i] -> val.t;
-  if (c -> binary_cluster[0])
-    s += c -> binary_cluster[0] -> val.b;
-  if (c -> binary_cluster[1])
-    s += c -> binary_cluster[1] -> val.t;
+  W s = c -> get_representative_cluster() -> get_val().t;
+  for (int i = 0; i < 2; ++i)
+    if (c -> get_unary_cluster(i))
+      s += c -> get_unary_cluster(i) -> get_val().t;
+  if (c -> get_binary_top_cluster())
+    s += c -> get_binary_top_cluster() -> get_val().b;
+  if (c -> get_binary_bottom_cluster())
+    s += c -> get_binary_bottom_cluster() -> get_val().t;
   return s;
 }
 
 template <class T, class W>
 void Contraction_RCTree<T, W>::extract_max_path(Cluster<T, Contraction_Type<W>> *c, std::pair<uint, uint>& mx) {
-  if (c -> parent -> cluster_type == 1) {
-    if (c -> cluster_type == 2)
+  if (c -> get_parent_cluster() -> get_cluster_type() == 1) {
+    if (c -> get_cluster_type() == 2)
       mx = {mx.first, 0};
     else
-      mx = {std::max(mx.first, c -> parent -> val.mt), 0};
+      mx = {std::max(mx.first, c -> get_parent_cluster() -> get_val().mt), 0};
   } else {
-    if (c -> cluster_type == 2) {
-      if (c -> parent -> binary_cluster[0] == c)
-        mx = {mx.first, std::max(mx.second, c -> parent -> val.mb)};
+    if (c -> get_cluster_type() == 2) {
+      if (c -> get_parent_cluster() -> get_binary_top_cluster() == c)
+        mx = {mx.first, std::max(mx.second, c -> get_parent_cluster() -> get_val().mb)};
       else
-        mx = {std::max(mx.first, c -> parent -> val.mt), mx.second};
+        mx = {std::max(mx.first, c -> get_parent_cluster() -> get_val().mt), mx.second};
     } else {
-      mx = {std::max(mx.first, c -> parent -> val.mt), std::max(mx.first, c -> parent -> val.mb)};
+      mx = {std::max(mx.first, c -> get_parent_cluster() -> get_val().mt), std::max(mx.first, c -> get_parent_cluster() -> get_val().mb)};
     }
   }
 }
@@ -157,33 +165,33 @@ uint Contraction_RCTree<T, W>::query_max_path(T u, T v) {
   uint du = 0, dv = 0;
   auto cu = &RCTree<T, Contraction_Type<W>>::vertex_clusters[u];
   auto cv = &RCTree<T, Contraction_Type<W>>::vertex_clusters[v];
-  while (cu -> parent)  ++du, cu = cu -> parent;
-  while (cv -> parent)  ++dv, cv = cv -> parent;
+  while (cu -> get_parent_cluster())  ++du, cu = cu -> get_parent_cluster();
+  while (cv -> get_parent_cluster())  ++dv, cv = cv -> get_parent_cluster();
   cu = &RCTree<T, Contraction_Type<W>>::vertex_clusters[u];
   cv = &RCTree<T, Contraction_Type<W>>::vertex_clusters[v];
   if (du < dv)
     std::swap(cu, cv), std::swap(du, dv);
   std::pair<uint, uint> mu = {0, 0}, mv = {0, 0}; 
-  while(du > dv)  --du, extract_max_path(cu, mu), cu = cu -> parent;
+  while(du > dv)  --du, extract_max_path(cu, mu), cu = cu -> get_parent_cluster();
 
-  while(cu -> parent != cv -> parent) {
+  while(cu -> get_parent_cluster() != cv -> get_parent_cluster()) {
     extract_max_path(cu, mu), extract_max_path(cv, mv);
-    cu = cu -> parent, cv = cv -> parent;
+    cu = cu -> get_parent_cluster(), cv = cv -> get_parent_cluster();
   }
   std::pair<uint, uint> bu, bv;
-  if (cu -> cluster_type == 0) {
-    bu = {cu -> representative, cu -> representative};
-  } else if (cu -> cluster_type == 1) {
-    bu = {cu -> boundary[0], -1};
+  if (cu -> get_cluster_type() == 0) {
+    bu = {cu -> get_representative(), cu -> get_representative()};
+  } else if (cu -> get_cluster_type() == 1) {
+    bu = {cu -> get_top_boundary(), -1};
   } else {
-    bu = {cu -> boundary[0], cu -> boundary[1]};
+    bu = {cu -> get_top_boundary(), cu -> get_bottom_boundary()};
   }
-  if (cv -> cluster_type == 0) {
-    bv = {cv -> representative, cv -> representative};
-  } else if (cv -> cluster_type == 1) {
-    bv = {cv -> boundary[0], -1};
+  if (cv -> get_cluster_type() == 0) {
+    bv = {cv -> get_representative(), cv -> get_representative()};
+  } else if (cv -> get_cluster_type() == 1) {
+    bv = {cv -> get_top_boundary(), -1};
   } else {
-    bv = {cv -> boundary[0], cv -> boundary[1]};
+    bv = {cv -> get_top_boundary(), cv -> get_bottom_boundary()};
   }
   if (bu.first == bv.first)
     return std::max(mu.first, mv.first);
@@ -193,3 +201,8 @@ uint Contraction_RCTree<T, W>::query_max_path(T u, T v) {
     return std::max(mu.second, mv.first);
   return std::max(mu.second, mv.second);
 }
+
+// template <class T, class W>
+// void Contraction_RCTree<T, W>::batch_operations(const parlay::sequence<Contraction_MixOp>& ops) {
+
+// }

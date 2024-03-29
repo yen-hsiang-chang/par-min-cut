@@ -23,6 +23,7 @@ public:
   virtual W edge_base() = 0;
   void reevaluate(Cluster<T, W> *c);
 
+protected:
   T n, n_binary, root;
   parlay::sequence<T> child_ptr_binary;
   parlay::sequence<std::pair<T, T>> child_edges_binary, parent_binary;
@@ -71,9 +72,9 @@ void RCTree<T, W>::build(parlay::random_generator& gen,
       edge_clusters[id] = Cluster<T, W>(id, nullptr, nullptr, nullptr,
                                         nullptr, nullptr, p, i, id, id);
       if (id < n - 1)
-        edge_clusters[id].setval(edge_value[id]);
+        edge_clusters[id].set_val(edge_value[id]);
       else 
-        edge_clusters[id].setval(edge_base());
+        edge_clusters[id].set_val(edge_base());
     }
   });
   
@@ -81,9 +82,9 @@ void RCTree<T, W>::build(parlay::random_generator& gen,
   parlay::parallel_for(0, n_binary, [&](const T& i) {
     vertex_clusters[i] = Cluster<T, W>(i, nullptr, nullptr, nullptr);
     if (i < n)
-      vertex_clusters[i].setval(vertex_value[i]);
+      vertex_clusters[i].set_val(vertex_value[i]);
     else
-      vertex_clusters[i].setval(vertex_base());
+      vertex_clusters[i].set_val(vertex_base());
   });
 
   auto aux_ptr = parlay::sequence<Cluster<T, W>*>::from_function(
@@ -109,24 +110,24 @@ void RCTree<T, W>::build(parlay::random_generator& gen,
       {
         auto [to, id] = child_edges_binary[i];
         auto &c = aux_ptr[id];
-        c -> parent = &rc_clusters[v];
+        c -> set_parent_cluster(&rc_clusters[v]);
         unary[usz++] = c;
       }
       {
         auto [to, id] = parent_binary[v];
         auto &c = aux_ptr[id];
-        c -> parent = &rc_clusters[v];
+        c -> set_parent_cluster(&rc_clusters[v]);
         binary_top = c;
-        b0 = (c -> boundary[0]) ^ v ^ (c -> boundary[1]);
-        be0 = (c -> boundary_edge[0]) ^ id ^ (c -> boundary_edge[1]);
+        b0 = (c -> get_top_boundary()) ^ v ^ (c -> get_bottom_boundary());
+        be0 = (c -> get_top_boundary_edge()) ^ id ^ (c -> get_bottom_boundary_edge());
         aux_ptr[be0] = &rc_clusters[v];
       }
       rc_clusters[v] = Cluster<T, W>(v, unary[0], unary[1], &vertex_clusters[v],
                                      binary_top, b0, be0);
-      vertex_clusters[v].parent = &rc_clusters[v];
-      deg[rc_clusters[v].boundary[0]]--;
+      vertex_clusters[v].set_parent_cluster(&rc_clusters[v]);
+      deg[rc_clusters[v].get_top_boundary()]--;
       deg[v]--;
-      rc_clusters[v].setval(f_unary(&rc_clusters[v]));
+      rc_clusters[v].set_val(f_unary(&rc_clusters[v]));
     };
 
     auto compress = [&](const T& v) {
@@ -140,16 +141,16 @@ void RCTree<T, W>::build(parlay::random_generator& gen,
         if (c -> is_binary())
         {
           binary[1] = c;
-          boundary[1] = (c -> boundary[0]) ^ v ^ (c -> boundary[1]);
-          boundary_edge[1] = (c -> boundary_edge[0]) ^ id ^ (c -> boundary_edge[1]);
+          boundary[1] = (c -> get_top_boundary()) ^ v ^ (c -> get_bottom_boundary());
+          boundary_edge[1] = (c -> get_top_boundary_edge()) ^ id ^ (c -> get_bottom_boundary_edge());
         }
       }
       {
         auto [to, id] = parent_binary[v];
         auto &c = aux_ptr[id];
         binary[0] = c;
-        boundary[0] = (c -> boundary[0]) ^ v ^ (c -> boundary[1]);
-        boundary_edge[0] = (c -> boundary_edge[0]) ^ id ^ (c -> boundary_edge[1]);
+        boundary[0] = (c -> get_top_boundary()) ^ v ^ (c -> get_bottom_boundary());
+        boundary_edge[0] = (c -> get_top_boundary_edge()) ^ id ^ (c -> get_bottom_boundary_edge());
       }
       if (deg[boundary[1]] <= 1)  return;
       std::bernoulli_distribution dist(0.5);
@@ -163,23 +164,23 @@ void RCTree<T, W>::build(parlay::random_generator& gen,
       {
         auto [to, id] = child_edges_binary[i];
         auto &c = aux_ptr[id];
-        c -> parent = &rc_clusters[v];
+        c -> set_parent_cluster(&rc_clusters[v]);
         if (!(c -> is_binary()))
           unary[usz++] =c;
       }
       {
         auto [to, id] = parent_binary[v];
         auto &c = aux_ptr[id];
-        c -> parent = &rc_clusters[v];
+        c -> set_parent_cluster(&rc_clusters[v]);
       }
       aux_ptr[boundary_edge[0]] = &rc_clusters[v];
       aux_ptr[boundary_edge[1]] = &rc_clusters[v];
       rc_clusters[v] = Cluster<T, W>(v, unary[0], unary[1], &vertex_clusters[v],
                                      binary[0], binary[1], boundary[0], boundary[1],
                                      boundary_edge[0], boundary_edge[1]);
-      vertex_clusters[v].parent = &rc_clusters[v];
+      vertex_clusters[v].set_parent_cluster(&rc_clusters[v]);
       deg[v] -= 2;
-      rc_clusters[v].setval(f_binary(&rc_clusters[v]));
+      rc_clusters[v].set_val(f_binary(&rc_clusters[v]));
     };
 
     for (auto v : active[1])
@@ -201,27 +202,35 @@ void RCTree<T, W>::build(parlay::random_generator& gen,
     for (T i = child_ptr_binary[v]; i < child_ptr_binary[v + 1]; ++i) {
       auto [to, id] = child_edges_binary[i];
       auto &c = aux_ptr[id];
-      c -> parent = &rc_clusters[v];
+      c -> set_parent_cluster(&rc_clusters[v]);
       unary[usz++] = c;
     }
     rc_clusters[v] = Cluster(v, unary[0], unary[1], &vertex_clusters[v]);
-    vertex_clusters[v].parent = &rc_clusters[v];
+    vertex_clusters[v].set_parent_cluster(&rc_clusters[v]);
     deg[v] = 0;
-    rc_clusters[v].setval(f_nullary(&rc_clusters[v]));
+    rc_clusters[v].set_val(f_nullary(&rc_clusters[v]));
   };
 
   finalize(root);
+  parlay::parallel_for(0, rc_clusters.size(), [&](const T& i) {
+    rc_clusters[i].walk();
+  });
+  parlay::parallel_for(0, vertex_clusters.size(), [&](const T& i) {
+    vertex_clusters[i].walk_from_parent_cluster();
+  });
+  parlay::parallel_for(0, edge_clusters.size(), [&](const T& i) {
+    edge_clusters[i].walk_from_parent_cluster();
+  });
   // rc_clusters[root].print();
 }
 
 template <class T, class W>
 void RCTree<T, W>::reevaluate(Cluster<T, W> *c) {
-  while (c -> parent) {
-    c = c -> parent;
-    switch(c -> cluster_type) {
-      case 0: c -> setval(f_nullary(c)); break;
-      case 1: c -> setval(f_unary(c)); break;
-      case 2: c -> setval(f_binary(c)); break;
+  while (c = c -> get_parent_cluster()) {
+    switch(c -> get_cluster_type()) {
+      case 0: c -> set_val(f_nullary(c)); break;
+      case 1: c -> set_val(f_unary(c)); break;
+      case 2: c -> set_val(f_binary(c)); break;
       default: assert(false);
     }
   }
