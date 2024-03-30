@@ -13,25 +13,38 @@
 template <class T, class W>
 class RCTree {
 public:
+  // Constructor where build needs to be called in the constructor of inherited class
+  // since it needs the pure virtual functions.
   RCTree(T n, const parlay::sequence<std::pair<T, T>>& edge_list);
   void build(parlay::random_generator& gen, const parlay::sequence<W>& vertex_value,
              const parlay::sequence<W>& edge_value);
+  
+  // Pure Virtual functions that need to be defined in inherited class for maintaining values in nullary/unary/binary clusters
   virtual W f_nullary(Cluster<T, W> *c) = 0;
   virtual W f_unary(Cluster<T, W> *c) = 0;
   virtual W f_binary(Cluster<T, W> *c) = 0;
+
+  // Pure Virtual functions that need to be defined in inherited class for added vertex/edge
   virtual W vertex_base() = 0;
   virtual W edge_base() = 0;
-  void reevaluate(Cluster<T, W> *c);
 
 protected:
-  T n, n_binary, root;
+  // Number of vertices in the original tree
+  T n;
+  // Data structure for the rooted binary tree
+  T n_binary, root;
   parlay::sequence<T> child_ptr_binary;
   parlay::sequence<std::pair<T, T>> child_edges_binary, parent_binary;
+  // Clusters in RCTree
   parlay::sequence<Cluster<T, W>> edge_clusters;
   parlay::sequence<Cluster<T, W>> vertex_clusters;
   parlay::sequence<Cluster<T, W>> rc_clusters;
+
+  // Walking up the tree from leaf cluster to reevaluate value
+  void reevaluate(Cluster<T, W> *c);
 };
 
+// Constructor for RCTree where it first converts the tree to a rooted binary tree
 template <class T, class W>
 RCTree<T, W>::RCTree(T n, const parlay::sequence<std::pair<T, T>>& edge_list) : n(n) {
   T n_ternary;
@@ -61,6 +74,7 @@ RCTree<T, W>::RCTree(T n, const parlay::sequence<std::pair<T, T>>& edge_list) : 
                      n_binary, child_ptr_binary, child_edges_binary, parent_binary);
 }
 
+// Build the RCTree for the rooted binary tree
 template <class T, class W>
 void RCTree<T, W>::build(parlay::random_generator& gen, 
                          const parlay::sequence<W>& vertex_value,
@@ -224,6 +238,7 @@ void RCTree<T, W>::build(parlay::random_generator& gen,
   // rc_clusters[root].print();
 }
 
+// Walking up the tree from leaf cluster to reevaluate value
 template <class T, class W>
 void RCTree<T, W>::reevaluate(Cluster<T, W> *c) {
   while (c = c -> get_parent_cluster()) {

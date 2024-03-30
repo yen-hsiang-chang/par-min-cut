@@ -11,11 +11,13 @@
 
 namespace utils {
 
+// Sort the sequence
 template <class T, class BinPred>
 void general_sort(parlay::sequence<T> &A, const BinPred& f) {
   ips4o::parallel::sort(A.begin(), A.end(), f);
 }
 
+// Convert a tree into a ternary tree and return a leaf
 template <class T>
 T ternary_tree(const T& n, const parlay::sequence<T>& edge_ptr, 
                const parlay::sequence<std::tuple<T, T, T>>& edges,
@@ -105,6 +107,7 @@ T ternary_tree(const T& n, const parlay::sequence<T>& edge_ptr,
   return parlay::find(deg, 1) - deg.begin();
 }
 
+// Convert the ternary tree into a rooted binary tree rooted at root
 template <class T>
 void binary_tree(const T& root, const T& n_ternary, const parlay::sequence<T>& edge_ptr_ternary, 
                  const parlay::sequence<std::tuple<T, T, T>>& edges_ternary,

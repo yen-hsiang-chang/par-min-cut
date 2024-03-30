@@ -52,6 +52,10 @@ public:
   W get_val() const;
   // Set maintained value
   void set_val(const W& rval);
+  // Get level
+  int get_level() const;
+  // Get tid
+  T get_tid() const;
   // Walking up the tree to set level and tid
   void walk();
   // Set level and tid from parent, only for leaf clusters
@@ -77,9 +81,9 @@ private:
   // Level in the rctree
   int level;
   // Number of clusters in the subtree
-  size_t size;
+  T size;
   // Timestamp in preorder traversal
-  size_t tid;
+  T tid;
 };
 
 // Default constructor
@@ -243,6 +247,18 @@ inline W Cluster<T, W>::get_val() const {
 template <class T, class W>
 inline void Cluster<T, W>::set_val(const W& rval) {
   val = rval;
+}
+
+// Get level
+template <class T, class W>
+inline int Cluster<T, W>::get_level() const {
+  return level;
+}
+
+// Get tid
+template <class T, class W>
+inline T Cluster<T, W>::get_tid() const {
+  return tid;
 }
 
 // Walking up the tree to set level and tid
