@@ -46,16 +46,15 @@ int main(int argc, char* argv[]) {
   });
 
   // Construct edge weight for Contraction RCTree
-  auto contraction_edge_weight = parlay::sequence<Contraction_Type<double>>::from_function(
-    G_undir.n - 1, [&](const uint& i) {
-      return Contraction_Type<W>(0, 0, i, i, false);
-    });
+  auto contraction_edge_weight = parlay::sequence<Contraction_Type<double>>::from_function(G_undir.n - 1, [&](const uint& i) {
+    return Contraction_Type<W>(0, 0, i, i, false);
+  });
 
   // Base case where each vertex is a partition
   W G_min_weighted_degree = parlay::reduce(G_weighted_degree, parlay::minimum<W>());
 
   // TODO: determine the number of iterations
-  for(int iter = 0; iter < 100; ++iter) {
+  for(int iter = 0; iter < 1; ++iter) {
     // Step 1: Generate weighted random edge ordering via exponential distribution
     auto weighted_ordering_time = -omp_get_wtime();
     gen(); // Advance one step for the rng
@@ -85,24 +84,21 @@ int main(int argc, char* argv[]) {
     //           << mst_time << " seconds" << "\n";
     
     // If it is a forest, the minimum cut is just 0.
-    if (E_MST.size() + 1 != G_dir.n)
-    {
+    if (E_MST.size() + 1 != G_dir.n) {
       std::cout << "min cut = 0." << "\n"; 
       break;
     }
 
     // Step 3: Build contraction RCTree
     auto contraction_rctree_time = -omp_get_wtime();
-    utils::general_sort(E_MST, [&](const std::tuple<uint, uint, double>& lhs, 
-                                   const std::tuple<uint, uint, double>& rhs) {
-                                    return std::get<2>(lhs) < std::get<2>(rhs);
-                                   });
+    utils::general_sort(E_MST, [&](const std::tuple<uint, uint, double>& lhs, const std::tuple<uint, uint, double>& rhs) {
+      return std::get<2>(lhs) < std::get<2>(rhs);
+    });
 
-    auto MST_edge_list = parlay::sequence<std::pair<uint, uint>>::from_function(
-      E_MST.size(), [&](const uint& i) {
-        auto [u, v, _] = E_MST[i];
-        return std::make_pair(u, v);
-      });
+    auto MST_edge_list = parlay::sequence<std::pair<uint, uint>>::from_function(E_MST.size(), [&](const uint& i) {
+      auto [u, v, _] = E_MST[i];
+      return std::make_pair(u, v);
+    });
 
     auto contraction_rctree = Contraction_RCTree<uint, W>(G_undir.n, MST_edge_list, gen, 
                                               contraction_vertex_weight, contraction_edge_weight);
@@ -125,7 +121,8 @@ int main(int argc, char* argv[]) {
       contraction_mixop[G_edge_list.size() * 2 + i * 2] = Contraction_MixOp<W>(i * 4 + 3, 1, i, 0);
       contraction_mixop[G_edge_list.size() * 2 + i * 2 + 1] = Contraction_MixOp<W>(i * 4 + 4, 2, u, 0);
     });
-    W answer = std::min(G_min_weighted_degree, contraction_rctree.batch_operations_sequential(contraction_mixop));
-    std::cout << answer << "\n";
+    // W answer = std::min(G_min_weighted_degree, contraction_rctree.batch_operations_sequential(contraction_mixop));
+    W answer = std::min(G_min_weighted_degree, contraction_rctree.batch_operations(contraction_mixop));
+    // std::cout << answer << "\n";
   }
 }

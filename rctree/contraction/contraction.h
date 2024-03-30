@@ -1,6 +1,7 @@
 #pragma once
 
 #include <limits>
+#include <utility>
 
 #include "../cluster.h"
 #include "../rctree.h"
@@ -13,7 +14,7 @@ struct Contraction_Type {
   Contraction_Type(W t = 0, W b = 0, uint mt = 0, uint mb = 0, bool joined = false) :
                    t(t), b(b), mt(mt), mb(mb), joined(joined) {}
   Contraction_Type<W> operator+(const Contraction_Type<W>& rhs) const {
-    return Contraction_Type<W>(t - rhs.t, b - rhs.b, 0, 0, joined && rhs.joined);
+    return Contraction_Type<W>(t - rhs.t, b - rhs.b, 0, 0, joined || rhs.joined);
   }
 };
 
@@ -47,7 +48,7 @@ public:
   T query_max_path(T u, T v);
   // Sequential batch operations for testing
   W batch_operations_sequential(parlay::sequence<Contraction_MixOp<W>>& ops);
-  // void batch_operations(parlay::sequence<Contraction_MixOp<W>>& ops);
+  W batch_operations(parlay::sequence<Contraction_MixOp<W>>& ops);
 
 private:
   // Operation 0: Subtract vertex weight
@@ -239,8 +240,8 @@ T Contraction_RCTree<T, W>::query_max_path(T u, T v) {
 template <class T, class W>
 W Contraction_RCTree<T, W>::batch_operations_sequential(parlay::sequence<Contraction_MixOp<W>>& ops) {
   utils::general_sort(ops, [&](const Contraction_MixOp<W>& lhs, const Contraction_MixOp<W>& rhs) {
-                                return lhs.timestamp < rhs.timestamp;
-                              });
+    return lhs.timestamp < rhs.timestamp;
+  });
   W answer = std::numeric_limits<W>::max();
   for (auto q : ops) {
     if (q.type == 0) {
@@ -252,4 +253,65 @@ W Contraction_RCTree<T, W>::batch_operations_sequential(parlay::sequence<Contrac
     }
   }
   return answer;
+}
+
+template <class T, class W>
+W Contraction_RCTree<T, W>::batch_operations(parlay::sequence<Contraction_MixOp<W>>& ops) {
+  utils::general_sort(ops, [&](const Contraction_MixOp<W>& lhs, const Contraction_MixOp<W>& rhs) {
+    T ltid = lhs.type == 1 ? RCTree<T, Contraction_Type<W>>::edge_clusters[lhs.u].get_tid() 
+                           : RCTree<T, Contraction_Type<W>>::vertex_clusters[lhs.u].get_tid();
+    T rtid = rhs.type == 1 ? RCTree<T, Contraction_Type<W>>::edge_clusters[rhs.u].get_tid()
+                           : RCTree<T, Contraction_Type<W>>::vertex_clusters[rhs.u].get_tid();
+    return ltid == rtid ? lhs.timestamp < rhs.timestamp : ltid < rtid;
+  });
+  // parlay::sequence<std::pair<size_t, Cluster<T, Contraction_Type<W>>> current_level(ops.size());
+
+  parlay::sequence<std::tuple<Contraction_Type<W>, bool, Cluster<T, Contraction_Type<W>>*>> segmented(ops.size());
+  parlay::parallel_for(0, ops.size(), [&](const T& i) {
+    std::get<2>(segmented[i]) = ops[i].type == 1 ? &RCTree<T, Contraction_Type<W>>::edge_clusters[ops[i].u]
+                                                 : &RCTree<T, Contraction_Type<W>>::vertex_clusters[ops[i].u];
+  });
+  parlay::parallel_for(0, ops.size(), [&](const T& i) {
+    if (i == 0 || std::get<2>(segmented[i]) -> get_tid() != std::get<2>(segmented[i - 1]) -> get_tid()) {
+      std::get<1>(segmented[i]) = true;
+      Contraction_Type<W> rhs(ops[i].type == 0 ? ops[i].w : 0, 0, 0, 0, ops[i].type == 1 ? true : false);
+      std::get<0>(segmented[i]) = std::get<2>(segmented[i]) -> get_val() + rhs;
+    } else {
+      std::get<1>(segmented[i]) = false;
+      Contraction_Type<W> rhs(ops[i].type == 0 ? ops[i].w : 0, 0, 0, 0, ops[i].type == 1 ? true : false);
+      std::get<0>(segmented[i]) = rhs;
+    }
+  });
+
+  auto segmented_scan_f = [](const std::tuple<Contraction_Type<W>, bool, Cluster<T, Contraction_Type<W>>*>& lhs,
+                             const std::tuple<Contraction_Type<W>, bool, Cluster<T, Contraction_Type<W>>*>& rhs) {
+    auto [lv, ls, lp] = lhs;
+    auto [rv, rs, rp] = rhs;
+    if (ls) {
+      if (rs) {
+        return std::make_tuple(rv, true, rp);
+      }
+      return std::make_tuple(lv + rv, true, rp);
+    } 
+    if (rs) {
+      return std::make_tuple(rv, true, rp);
+    }
+    return std::make_tuple(lv + rv, false, rp);
+  };
+  // for (auto q : ops) {
+  //   std::cout << q.type << ' ' << q.u << "\n";
+  // }
+  // std::cout << "=================\n";
+
+  // for (auto [u, v, w] : segmented) {
+  //   std::cout << u.t << ' ' << u.b << ' ' << u.joined << ' ' << v << ' ' << w -> get_tid() << "\n";
+  // }
+
+  parlay::scan_inclusive_inplace(segmented, parlay::make_monoid(segmented_scan_f, 
+                                 std::make_tuple(Contraction_Type<W>(), false, (Cluster<T, Contraction_Type<W>>*)(nullptr))));
+  // std::cout << "=================\n";
+  // for (auto [u, v, w] : segmented) {
+  //   std::cout << u.t << ' ' << u.b << ' ' << u.joined << ' ' << v << ' ' << w -> get_tid() << "\n";
+  // }
+  return W();
 }
