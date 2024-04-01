@@ -315,7 +315,7 @@ W Contraction_RCTree<W>::batch_operations(parlay::sequence<Contraction_MixOp<W>>
     return std::make_pair(rhs.second ? rhs.first : lhs.first + rhs.first, lhs.second || rhs.second);
   };
 
-  for (int level = max_level; level >= 1; level--) {
+  for (int level = max_level; level >= 1; --level) {
     parlay::parallel_for(0, ops.size(), [&](uint64_t i) {
       segmented_level[i] = std::make_pair(
         current_level[i].second.get_level() == level ? 1 : 0,
@@ -326,7 +326,7 @@ W Contraction_RCTree<W>::batch_operations(parlay::sequence<Contraction_MixOp<W>>
                                    std::make_pair(uint64_t(0), false)));
     parlay::parallel_for(0, ops.size(), [&](uint64_t i) {
       segmented_level[i].second = false;
-      if (segmented_level[i].first != 0) {
+      if (segmented_level[i].first) {
         if (i + 1 == ops.size() || (current_level[i].second.get_parent_cluster() != current_level[i + 1].second.get_parent_cluster())) {
           segmented_level[i].second = true;
         }
@@ -342,7 +342,7 @@ W Contraction_RCTree<W>::batch_operations(parlay::sequence<Contraction_MixOp<W>>
           idx -= segmented_level[idx].first;
           if (segmented_level[idx].first == 0 || current_level[idx].second.get_parent_cluster() != current_level[idx + 1].second.get_parent_cluster())
             break;
-          merged = parlay::merge(parlay::make_slice(merged), parlay::make_slice(current_level.begin() + idx + 1 - segmented_level[idx].first, current_level.begin() + idx + 1), 
+          merged = parlay::merge(parlay::make_slice(merged), parlay::make_slice(current_level.cut(idx + 1 - segmented_level[idx].first, idx + 1)), 
                                  [&](const std::pair<uint64_t, Cluster<Contraction_Type<W>>>& lhs,
                                      const std::pair<uint64_t, Cluster<Contraction_Type<W>>>& rhs) {
             return ops[lhs.first].timestamp < ops[rhs.first].timestamp;
@@ -405,5 +405,5 @@ W Contraction_RCTree<W>::batch_operations(parlay::sequence<Contraction_MixOp<W>>
   auto min_cut_seq = parlay::delayed_tabulate(ops.size(), [&](uint64_t i) {
     return ops[i].type == 3 ? ops[i].w : std::numeric_limits<W>::max();
   });
-  return parlay::reduce(min_cut_seq, parlay::minimum<int>());;
+  return parlay::reduce(min_cut_seq, parlay::minimum<W>());;
 }

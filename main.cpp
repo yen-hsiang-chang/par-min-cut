@@ -122,7 +122,8 @@ int main(int argc, char* argv[]) {
       contraction_mixop[G_edge_list.size() * 2 + i * 2 + 1] = Contraction_MixOp<W>(i * 4 + 4, 2, u, 0);
     });
     // W answer = std::min(G_min_weighted_degree, contraction_rctree.batch_operations_sequential(contraction_mixop));
-    W answer = std::min(G_min_weighted_degree, contraction_rctree.batch_operations(contraction_mixop));
-    std::cout << answer << "\n";
+    // W answer = std::min(G_min_weighted_degree, contraction_rctree.batch_operations(contraction_mixop));
+    // std::cout << answer << "\n";
+    std::cout << contraction_rctree.batch_operations(contraction_mixop) << std::endl;
   }
 }
