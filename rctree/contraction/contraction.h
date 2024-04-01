@@ -30,7 +30,7 @@ struct Contraction_Type {
   Contraction_Type(W t = 0, W b = 0, uintV mt = 0, uintV mb = 0, bool joined = false) :
                    t(t), b(b), mt(mt), mb(mb), joined(joined) {}
   Contraction_Type<W> operator+(const Contraction_Type<W>& rhs) const {
-    return Contraction_Type<W>(t - rhs.t, b - rhs.b, 0, 0, joined || rhs.joined);
+    return Contraction_Type<W>(t + rhs.t, b + rhs.b, 0, 0, joined || rhs.joined);
   }
 };
 
@@ -285,11 +285,11 @@ W Contraction_RCTree<W>::batch_operations(parlay::sequence<Contraction_MixOp<W>>
   });
   parlay::parallel_for(0, ops.size(), [&](uint64_t i) {
     if (i == 0 || current_level[i].second.get_tid() != current_level[i - 1].second.get_tid()) {
-      Contraction_Type<W> rhs(ops[i].type == 0 ? ops[i].w : 0, 0, 0, 0, ops[i].type == 1 ? true : false);
+      Contraction_Type<W> rhs(ops[i].type == 0 ? -ops[i].w : 0, 0, 0, 0, ops[i].type == 1 ? true : false);
       segmented_contraction[i].first = current_level[i].second.get_val() + rhs;
       segmented_contraction[i].second = true;
     } else {
-      Contraction_Type<W> rhs(ops[i].type == 0 ? ops[i].w : 0, 0, 0, 0, ops[i].type == 1 ? true : false);
+      Contraction_Type<W> rhs(ops[i].type == 0 ? -ops[i].w : 0, 0, 0, 0, ops[i].type == 1 ? true : false);
       segmented_contraction[i].first = rhs;
       segmented_contraction[i].second = false;
     }
@@ -342,7 +342,7 @@ W Contraction_RCTree<W>::batch_operations(parlay::sequence<Contraction_MixOp<W>>
           idx -= segmented_level[idx].first;
           if (segmented_level[idx].first == 0 || current_level[idx].second.get_parent_cluster() != current_level[idx + 1].second.get_parent_cluster())
             break;
-          merged = parlay::merge(parlay::make_slice(merged), parlay::make_slice(current_level.cut(idx + 1 - segmented_level[idx].first, idx + 1)), 
+          merged = parlay::merge(parlay::make_slice(merged), current_level.cut(idx + 1 - segmented_level[idx].first, idx + 1),
                                  [&](const std::pair<uint64_t, Cluster<Contraction_Type<W>>>& lhs,
                                      const std::pair<uint64_t, Cluster<Contraction_Type<W>>>& rhs) {
             return ops[lhs.first].timestamp < ops[rhs.first].timestamp;

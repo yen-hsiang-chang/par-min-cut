@@ -343,7 +343,7 @@ inline void Cluster<W>::walk_from_parent_cluster() {
     if (parent_child_relation_by_pointer() == 1)
       tid = parent_cluster -> tid + 2;
     else
-      tid = parent_cluster -> tid + 3;
+      tid = parent_cluster -> tid + parent_cluster -> binary_cluster[0] -> size + 2;
   }
 }
 
