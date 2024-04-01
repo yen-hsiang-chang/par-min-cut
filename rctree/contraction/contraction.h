@@ -6,6 +6,21 @@
 #include "../cluster.h"
 #include "../rctree.h"
 
+struct Contraction_Index {
+  size_t index[5];
+  Contraction_Index(size_t i0 = 0, size_t i1 = 0, size_t i2 = 0, size_t i3 = 0, size_t i4 = 0) {
+    index[0] = i0, index[1] = i1, index[2] = i2, index[3] = i3, index[4] = i4;
+  }
+  void set(const size_t& i) {index[i] = 1;}
+  Contraction_Index operator+(const Contraction_Index& rhs) const {
+    return Contraction_Index(index[0] + rhs[0], index[1] + rhs[1], index[2] + rhs[2], 
+                             index[3] + rhs[3], index[4] + rhs[4]);
+  }
+  size_t operator[](const size_t& i) const {
+    return index[i];
+  }
+};
+
 template <class W>
 struct Contraction_Type {
   W t, b; // sum of vertex weights of connected componenent from top/bottom boundaries, only count for current cluster 
@@ -74,11 +89,7 @@ Contraction_RCTree<T, W>::Contraction_RCTree(T n, const parlay::sequence<std::pa
 // Virtual function that is used for maintaining values in nullary clusters
 template <class T, class W>
 Contraction_Type<W> Contraction_RCTree<T, W>::f_nullary(Cluster<T, Contraction_Type<W>> *c) {
-  W s = c -> get_representative_cluster() -> get_val().t;
-  for (int i = 0;i < 2; ++i)
-    if (c -> get_unary_cluster(i))
-      s += c -> get_unary_cluster(i) -> get_val().t;
-  return Contraction_Type<W>(s, 0, 0, 0, true);
+  return Contraction_Type<W>(0, 0, 0, 0, true);
 }
 
 // Virtual function that is used for maintaining values in unary clusters
@@ -264,54 +275,134 @@ W Contraction_RCTree<T, W>::batch_operations(parlay::sequence<Contraction_MixOp<
                            : RCTree<T, Contraction_Type<W>>::vertex_clusters[rhs.u].get_tid();
     return ltid == rtid ? lhs.timestamp < rhs.timestamp : ltid < rtid;
   });
-  // parlay::sequence<std::pair<size_t, Cluster<T, Contraction_Type<W>>> current_level(ops.size());
 
-  parlay::sequence<std::tuple<Contraction_Type<W>, bool, Cluster<T, Contraction_Type<W>>*>> segmented(ops.size());
-  parlay::parallel_for(0, ops.size(), [&](const T& i) {
-    std::get<2>(segmented[i]) = ops[i].type == 1 ? &RCTree<T, Contraction_Type<W>>::edge_clusters[ops[i].u]
-                                                 : &RCTree<T, Contraction_Type<W>>::vertex_clusters[ops[i].u];
+  parlay::sequence<std::pair<size_t, Cluster<T, Contraction_Type<W>>>> current_level(ops.size());
+  parlay::sequence<std::pair<Contraction_Type<W>, bool>> segmented_contraction(ops.size());
+  parlay::parallel_for(0, ops.size(), [&](const size_t& i) {
+    current_level[i] = std::make_pair(i, ops[i].type == 1 ? RCTree<T, Contraction_Type<W>>::edge_clusters[ops[i].u]
+                                                          : RCTree<T, Contraction_Type<W>>::vertex_clusters[ops[i].u]);
   });
-  parlay::parallel_for(0, ops.size(), [&](const T& i) {
-    if (i == 0 || std::get<2>(segmented[i]) -> get_tid() != std::get<2>(segmented[i - 1]) -> get_tid()) {
-      std::get<1>(segmented[i]) = true;
+  parlay::parallel_for(0, ops.size(), [&](const size_t& i) {
+    if (i == 0 || current_level[i].second.get_tid() != current_level[i - 1].second.get_tid()) {
       Contraction_Type<W> rhs(ops[i].type == 0 ? ops[i].w : 0, 0, 0, 0, ops[i].type == 1 ? true : false);
-      std::get<0>(segmented[i]) = std::get<2>(segmented[i]) -> get_val() + rhs;
+      segmented_contraction[i].first = current_level[i].second.get_val() + rhs;
+      segmented_contraction[i].second = true;
     } else {
-      std::get<1>(segmented[i]) = false;
       Contraction_Type<W> rhs(ops[i].type == 0 ? ops[i].w : 0, 0, 0, 0, ops[i].type == 1 ? true : false);
-      std::get<0>(segmented[i]) = rhs;
+      segmented_contraction[i].first = rhs;
+      segmented_contraction[i].second = false;
     }
   });
 
-  auto segmented_scan_f = [](const std::tuple<Contraction_Type<W>, bool, Cluster<T, Contraction_Type<W>>*>& lhs,
-                             const std::tuple<Contraction_Type<W>, bool, Cluster<T, Contraction_Type<W>>*>& rhs) {
-    auto [lv, ls, lp] = lhs;
-    auto [rv, rs, rp] = rhs;
-    if (ls) {
-      if (rs) {
-        return std::make_tuple(rv, true, rp);
-      }
-      return std::make_tuple(lv + rv, true, rp);
-    } 
-    if (rs) {
-      return std::make_tuple(rv, true, rp);
-    }
-    return std::make_tuple(lv + rv, false, rp);
+  auto segmented_contraction_scan_f = [](const std::pair<Contraction_Type<W>, bool>& lhs,
+                                         const std::pair<Contraction_Type<W>, bool>& rhs) {
+    return std::make_pair(rhs.second ? rhs.first : lhs.first + rhs.first, lhs.second || rhs.second);
   };
-  // for (auto q : ops) {
-  //   std::cout << q.type << ' ' << q.u << "\n";
-  // }
-  // std::cout << "=================\n";
+  parlay::scan_inclusive_inplace(segmented_contraction, parlay::make_monoid(segmented_contraction_scan_f, 
+                                 std::make_pair(Contraction_Type<W>(), false)));
+  parlay::parallel_for(0, ops.size(), [&](const size_t& i) {
+    current_level[i].second.set_val(segmented_contraction[i].first);
+  });
+  auto max_level_seq = parlay::delayed_tabulate(ops.size(), [&](const size_t& i) {
+    return current_level[i].second.get_level();
+  });
+  int max_level = parlay::reduce(max_level_seq, parlay::maximum<int>());
+  
+  parlay::sequence<std::pair<size_t, bool>> segmented_level(ops.size());
+  auto segmented_level_scan_f = [](const std::pair<size_t, bool>& lhs,
+                                   const std::pair<size_t, bool>& rhs) {
+    return std::make_pair(rhs.second ? rhs.first : lhs.first + rhs.first, lhs.second || rhs.second);
+  };
 
-  // for (auto [u, v, w] : segmented) {
-  //   std::cout << u.t << ' ' << u.b << ' ' << u.joined << ' ' << v << ' ' << w -> get_tid() << "\n";
-  // }
-
-  parlay::scan_inclusive_inplace(segmented, parlay::make_monoid(segmented_scan_f, 
-                                 std::make_tuple(Contraction_Type<W>(), false, (Cluster<T, Contraction_Type<W>>*)(nullptr))));
-  // std::cout << "=================\n";
-  // for (auto [u, v, w] : segmented) {
-  //   std::cout << u.t << ' ' << u.b << ' ' << u.joined << ' ' << v << ' ' << w -> get_tid() << "\n";
-  // }
-  return W();
+  for (int level = max_level; level >= 1; level--) {
+    parlay::parallel_for(0, ops.size(), [&](const size_t& i) {
+      segmented_level[i] = std::make_pair(
+        current_level[i].second.get_level() == level ? 1 : 0,
+        i == 0 || current_level[i].second.get_tid() != current_level[i - 1].second.get_tid() ? true : false
+      );
+    });
+    parlay::scan_inclusive_inplace(segmented_level, parlay::make_monoid(segmented_level_scan_f, 
+                                   std::make_pair(size_t(0), false)));
+    parlay::parallel_for(0, ops.size(), [&](const size_t& i) {
+      segmented_level[i].second = false;
+      if (segmented_level[i].first != 0) {
+        if (i + 1 == ops.size() || (current_level[i].second.get_parent_cluster() != current_level[i + 1].second.get_parent_cluster())) {
+          segmented_level[i].second = true;
+        }
+      }
+    });
+    parlay::parallel_for(0, ops.size(), [&](const size_t& i) {
+      if (segmented_level[i].second) {
+        size_t idx = i;
+        auto merged = current_level.subseq(idx + 1 - segmented_level[idx].first, idx + 1);
+        size_t offset[5] = {0, 0, 0, 0, 0};
+        offset[current_level[idx].second.parent_child_relation_by_tid()] = idx + 1 - segmented_level[idx].first;
+        while (idx >= segmented_level[idx].first) {
+          idx -= segmented_level[idx].first;
+          if (segmented_level[idx].first == 0 || current_level[idx].second.get_parent_cluster() != current_level[idx + 1].second.get_parent_cluster())
+            break;
+          merged = parlay::merge(parlay::make_slice(merged), parlay::make_slice(current_level.begin() + idx + 1 - segmented_level[idx].first, current_level.begin() + idx + 1), 
+                                 [&](const std::pair<size_t, Cluster<T, Contraction_Type<W>>>& lhs,
+                                     const std::pair<size_t, Cluster<T, Contraction_Type<W>>>& rhs) {
+            return ops[lhs.first].timestamp < ops[rhs.first].timestamp;
+          });
+          offset[current_level[idx].second.parent_child_relation_by_tid()] = idx + 1 - segmented_level[idx].first;
+        }
+        parlay::sequence<Contraction_Index> cindex(merged.size());
+        parlay::parallel_for(0, merged.size(), [&](const size_t& j) {
+          cindex[j].set(merged[j].second.parent_child_relation_by_tid());
+        });
+        parlay::scan_inclusive_inplace(cindex);
+        parlay::parallel_for(0, merged.size(), [&](const size_t& j) {
+          auto &c = merged[j].second;
+          c = *c.get_parent_cluster();
+          if (cindex[j][0]) {
+            c.set_representative_cluster(&current_level[offset[0] + cindex[j][0] - 1].second);
+          }
+          if (cindex[j][1]) {
+            c.set_binary_top_cluster(&current_level[offset[1] + cindex[j][1] - 1].second);
+          }
+          if (cindex[j][2]) {
+            c.set_binary_bottom_cluster(&current_level[offset[2] + cindex[j][2] - 1].second);
+          }
+          if (cindex[j][3]) {
+            c.set_unary_cluster(0, &current_level[offset[3] + cindex[j][3] - 1].second);
+          }
+          if (cindex[j][4]) {
+            c.set_unary_cluster(1, &current_level[offset[4] + cindex[j][4] - 1].second);
+          }
+          switch(c.get_cluster_type()) {
+            case 0: c.set_val(f_nullary(&c)); break;
+            case 1: c.set_val(f_unary(&c)); break;
+            case 2: c.set_val(f_binary(&c)); break;
+            default: assert(false);
+          }
+          auto &q = ops[merged[j].first];
+          if (q.type == 2 && c.get_representative() == q.u) {
+            if (c.get_binary_top_cluster() && c.get_binary_top_cluster() -> get_val().joined) {
+              q.u = c.get_top_boundary();
+            } else if (c.get_binary_bottom_cluster() && c.get_binary_bottom_cluster() -> get_val().joined) {
+              q.u = c.get_bottom_boundary();
+            } else {
+              W qsum = c.get_representative_cluster() -> get_val().t;
+              for (int k = 0; k < 2; ++k)
+                if (c.get_unary_cluster(k))
+                  qsum += c.get_unary_cluster(k) -> get_val().t;
+              if (c.get_binary_top_cluster())
+                qsum += c.get_binary_top_cluster() -> get_val().b;
+              if (c.get_binary_bottom_cluster())
+                qsum += c.get_binary_bottom_cluster() -> get_val().t;
+              q.w = qsum;
+              q.type = 3;
+            }
+          }
+        });
+        parlay::copy(merged, current_level.cut(i + 1 - merged.size(), i + 1));
+      }
+    });
+  }
+  auto min_cut_seq = parlay::delayed_tabulate(ops.size(), [&](const size_t& i) {
+    return ops[i].type == 3 ? ops[i].w : std::numeric_limits<W>::max();
+  });
+  return parlay::reduce(min_cut_seq, parlay::minimum<int>());;
 }

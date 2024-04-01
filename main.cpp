@@ -54,7 +54,7 @@ int main(int argc, char* argv[]) {
   W G_min_weighted_degree = parlay::reduce(G_weighted_degree, parlay::minimum<W>());
 
   // TODO: determine the number of iterations
-  for(int iter = 0; iter < 1; ++iter) {
+  for(int iter = 0; iter < 100; ++iter) {
     // Step 1: Generate weighted random edge ordering via exponential distribution
     auto weighted_ordering_time = -omp_get_wtime();
     gen(); // Advance one step for the rng
@@ -123,6 +123,6 @@ int main(int argc, char* argv[]) {
     });
     // W answer = std::min(G_min_weighted_degree, contraction_rctree.batch_operations_sequential(contraction_mixop));
     W answer = std::min(G_min_weighted_degree, contraction_rctree.batch_operations(contraction_mixop));
-    // std::cout << answer << "\n";
+    std::cout << answer << "\n";
   }
 }

@@ -21,11 +21,11 @@ public:
           Cluster<T, W> *bt, Cluster<T, W> *bb, T b0, T b1, T be0, T be1);
   // Check if this is a binary cluster
   bool is_binary() const;
-  // Check the parent child relationship
+  // Check the parent child relationship by tid
   // 0: representative cluster
   // 1: binary top cluster, 2: binary bottom cluster
   // 3: first unary cluster, 4: second unary cluster
-  int parent_child_relation() const;
+  int parent_child_relation_by_tid() const;
   // Get top/bottom boundary
   T get_top_boundary() const;
   T get_bottom_boundary() const;
@@ -37,15 +37,23 @@ public:
   // Get cluster type
   int get_cluster_type() const;
   // Set parent cluster
-  void set_parent_cluster(Cluster<T, W> *p);
+  void set_parent_cluster(Cluster<T, W> *c);
   // Get parent cluster
   Cluster<T, W>* get_parent_cluster() const;
+  // Set representative cluster
+  void set_representative_cluster(Cluster<T, W> *c);
   // Get representative cluster
   Cluster<T, W>* get_representative_cluster() const;
+  // Set binary top cluster
+  void set_binary_top_cluster(Cluster<T, W> *c);
   // Get binary top cluster
   Cluster<T, W>* get_binary_top_cluster() const;
+  // Set binary bottom cluster
+  void set_binary_bottom_cluster(Cluster<T, W> *c);
   // Get binary bottom cluster
   Cluster<T, W>* get_binary_bottom_cluster() const;
+  // Set unary cluster by idx
+  void set_unary_cluster(T idx, Cluster<T, W> *c);
   // Get unary cluster by idx
   Cluster<T, W>* get_unary_cluster(T idx) const;
   // Get maintained value
@@ -84,6 +92,11 @@ private:
   T size;
   // Timestamp in preorder traversal
   T tid;
+  // Check the parent child relationship by pointer
+  // 0: representative cluster
+  // 1: binary top cluster, 2: binary bottom cluster
+  // 3: first unary cluster, 4: second unary cluster
+  int parent_child_relation_by_pointer() const;
 };
 
 // Default constructor
@@ -148,12 +161,29 @@ inline bool Cluster<T, W>::is_binary() const {
   return cluster_type == 2;
 }
 
-// Check the parent child relationship
+// Check the parent child relationship by tid
 // 0: representative cluster
 // 1: binary top cluster, 2: binary bottom cluster
 // 3: first unary cluster, 4: second unary cluster
 template <class T, class W>
-int Cluster<T, W>::parent_child_relation() const {
+int Cluster<T, W>::parent_child_relation_by_tid() const {
+  if (cluster_type == 0)  return 0;
+  if (cluster_type == 2) {
+    if (tid == parent_cluster -> binary_cluster[0] -> tid)
+      return 1;
+    return 2;
+  }
+  if (tid == parent_cluster -> unary_cluster[0] -> tid)
+    return 3;
+  return 4;
+}
+
+// Check the parent child relationship by pointer
+// 0: representative cluster
+// 1: binary top cluster, 2: binary bottom cluster
+// 3: first unary cluster, 4: second unary cluster
+template <class T, class W>
+int Cluster<T, W>::parent_child_relation_by_pointer() const {
   if (cluster_type == 0)  return 0;
   if (cluster_type == 2) {
     if (this == parent_cluster -> binary_cluster[0])
@@ -203,8 +233,8 @@ inline int Cluster<T, W>::get_cluster_type() const {
 
 // Set parent cluster
 template <class T, class W>
-inline void Cluster<T, W>::set_parent_cluster(Cluster<T, W> *p) {
-  parent_cluster = p;
+inline void Cluster<T, W>::set_parent_cluster(Cluster<T, W> *c) {
+  parent_cluster = c;
 }
 
 // Get parent cluster
@@ -213,10 +243,22 @@ inline Cluster<T, W>* Cluster<T, W>::get_parent_cluster() const {
   return parent_cluster;
 }
 
+// Set representative cluster
+template <class T, class W>
+inline void Cluster<T, W>::set_representative_cluster(Cluster<T, W> *c) {
+  representative_cluster = c;
+}
+
 // Get representative cluster
 template <class T, class W>
 inline Cluster<T, W>* Cluster<T, W>::get_representative_cluster() const {
   return representative_cluster;
+}
+
+// Set binary top cluster
+template <class T, class W>
+inline void Cluster<T, W>::set_binary_top_cluster(Cluster<T, W> *c) {
+  binary_cluster[0] = c;
 }
 
 // Get binary top cluster
@@ -225,10 +267,22 @@ inline Cluster<T, W>* Cluster<T, W>::get_binary_top_cluster() const {
   return binary_cluster[0];
 }
 
+// Set binary bottom cluster
+template <class T, class W>
+inline void Cluster<T, W>::set_binary_bottom_cluster(Cluster<T, W> *c) {
+  binary_cluster[1] = c;
+}
+
 // Get binary bottom cluster
 template <class T, class W>
 inline Cluster<T, W>* Cluster<T, W>::get_binary_bottom_cluster() const {
   return binary_cluster[1];
+}
+
+// Set unary cluster by idx
+template <class T, class W>
+inline void Cluster<T, W>::set_unary_cluster(T idx, Cluster<T, W> *c) {
+  unary_cluster[idx] = c;
 }
 
 // Get unary cluster by idx
@@ -271,7 +325,7 @@ void Cluster<T, W>::walk() {
     auto nc = c -> parent_cluster;
     ++level;
     ++tid;
-    int pc = c -> parent_child_relation();
+    int pc = c -> parent_child_relation_by_pointer();
     if (pc > 0) tid += nc -> representative_cluster -> size;
     if (pc > 1 && nc -> binary_cluster[0])  tid += nc -> binary_cluster[0] -> size;
     if (pc > 2 && nc -> binary_cluster[1])  tid += nc -> binary_cluster[1] -> size;
@@ -287,7 +341,7 @@ inline void Cluster<T, W>::walk_from_parent_cluster() {
   if (cluster_type == 0) {
     tid = parent_cluster -> tid + 1;
   } else {
-    if (parent_child_relation() == 1)
+    if (parent_child_relation_by_pointer() == 1)
       tid = parent_cluster -> tid + 2;
     else
       tid = parent_cluster -> tid + 3;
