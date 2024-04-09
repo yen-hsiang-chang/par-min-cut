@@ -14,7 +14,7 @@
 
 int main(int argc, char* argv[]) {
   // macros
-  using W = double;
+  using W = unsigned int;
 
   // random number generator
   const size_t seed = 42;
@@ -46,15 +46,17 @@ int main(int argc, char* argv[]) {
   });
 
   // Construct edge weight for Contraction RCTree
-  auto contraction_edge_weight = parlay::sequence<Contraction_Type<double>>::from_function(G_undir.n - 1, [&](uintV i) {
+  auto contraction_edge_weight = parlay::sequence<Contraction_Type<W>>::from_function(G_undir.n - 1, [&](uintV i) {
     return Contraction_Type<W>(0, 0, i, i, false);
   });
 
   // Base case where each vertex is a partition
   W G_min_weighted_degree = parlay::reduce(G_weighted_degree, parlay::minimum<W>());
 
+  std::cout << G_min_weighted_degree << std::endl;
+
   // TODO: determine the number of iterations
-  for(int iter = 0; iter < 100; ++iter) {
+  for(int iter = 0; iter < 1; ++iter) {
     // Step 1: Generate weighted random edge ordering via exponential distribution
     auto weighted_ordering_time = -omp_get_wtime();
     gen(); // Advance one step for the rng
@@ -66,8 +68,8 @@ int main(int argc, char* argv[]) {
     });
     weighted_ordering_time += omp_get_wtime();
 
-    // std::cout << "Weighted Random Edge Ordering Time: "
-    //           << weighted_ordering_time << " seconds" << "\n";
+    std::cout << "Weighted Random Edge Ordering Time: "
+              << weighted_ordering_time << " seconds" << std::endl;
   
     // Step 2: Compute MST based on weighted random edge ordering
     auto mst_time = -omp_get_wtime();
@@ -80,12 +82,12 @@ int main(int argc, char* argv[]) {
     auto E_MST = gbbs::MinimumSpanningForest_boruvka::MinimumSpanningForest(G_MST_input);
     mst_time += omp_get_wtime();
 
-    // std::cout << "MST Time: "
-    //           << mst_time << " seconds" << "\n";
+    std::cout << "MST Time: "
+              << mst_time << " seconds" << std::endl;
     
     // If it is a forest, the minimum cut is just 0.
     if (E_MST.size() + 1 != G_dir.n) {
-      std::cout << "min cut = 0." << "\n"; 
+      std::cout << "min cut = 0." << std::endl; 
       break;
     }
 
@@ -104,10 +106,11 @@ int main(int argc, char* argv[]) {
                                                     contraction_vertex_weight, contraction_edge_weight);
     contraction_rctree_time += omp_get_wtime();
 
-    // std::cout << "Contraction RCTree Time: "
-    //           << contraction_rctree_time << " seconds" << "\n";
+    std::cout << "Contraction RCTree Time: "
+              << contraction_rctree_time << " seconds" << std::endl;
 
     // Step 4: Batch operations
+    auto contraction_batched_ops_time = -omp_get_wtime();
     auto contraction_mixop = parlay::sequence<Contraction_MixOp<W>>((G_edge_list.size() + MST_edge_list.size() - 1) * 2);
     // Subtract vertex weight
     parlay::parallel_for(0, G_edge_list.E.size(), [&](uintE i) {
@@ -123,7 +126,12 @@ int main(int argc, char* argv[]) {
     });
     // W answer = std::min(G_min_weighted_degree, contraction_rctree.batch_operations_sequential(contraction_mixop));
     // W answer = std::min(G_min_weighted_degree, contraction_rctree.batch_operations(contraction_mixop));
-    // std::cout << answer << "\n";
-    std::cout << contraction_rctree.batch_operations(contraction_mixop) << std::endl;
+    W answer = contraction_rctree.batch_operations(contraction_mixop);
+    contraction_batched_ops_time += omp_get_wtime();
+
+    std::cout << "Contraction Batched Operations Time: "
+              << contraction_batched_ops_time << " seconds" << std::endl;
+
+    std::cout << answer << std::endl;
   }
 }
