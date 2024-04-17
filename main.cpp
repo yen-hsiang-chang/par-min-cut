@@ -42,18 +42,18 @@ int main(int argc, char* argv[]) {
     };
     auto weights = parlay::delayed_seq<W>(G_undir.v_data[i].degree, get_weight);
     G_weighted_degree[i] = parlay::reduce(weights);
-    contraction_vertex_weight[i] = Contraction_Type<W>(G_weighted_degree[i], 0, 0, 0, true);
+    contraction_vertex_weight[i] = std::make_pair(Contraction_CC<W>(G_weighted_degree[i], 0, true), Contraction_P(0, 0));
   });
 
   // Construct edge weight for Contraction RCTree
   auto contraction_edge_weight = parlay::sequence<Contraction_Type<W>>::from_function(G_undir.n - 1, [&](uintV i) {
-    return Contraction_Type<W>(0, 0, i, i, false);
+    return std::make_pair(Contraction_CC<W>(0, 0, false), Contraction_P(i, i)); 
   });
 
   // Base case where each vertex is a partition
   W G_min_weighted_degree = parlay::reduce(G_weighted_degree, parlay::minimum<W>());
 
-  std::cout << G_min_weighted_degree << std::endl;
+  std::cout << G_min_weighted_degree << "\n";
 
   // TODO: determine the number of iterations
   for(int iter = 0; iter < 1; ++iter) {
@@ -69,7 +69,7 @@ int main(int argc, char* argv[]) {
     weighted_ordering_time += omp_get_wtime();
 
     std::cout << "Weighted Random Edge Ordering Time: "
-              << weighted_ordering_time << " seconds" << std::endl;
+              << weighted_ordering_time << " seconds" << "\n";
   
     // Step 2: Compute MST based on weighted random edge ordering
     auto mst_time = -omp_get_wtime();
@@ -83,11 +83,11 @@ int main(int argc, char* argv[]) {
     mst_time += omp_get_wtime();
 
     std::cout << "MST Time: "
-              << mst_time << " seconds" << std::endl;
+              << mst_time << " seconds" << "\n";
     
     // If it is a forest, the minimum cut is just 0.
     if (E_MST.size() + 1 != G_dir.n) {
-      std::cout << "min cut = 0." << std::endl; 
+      std::cout << "min cut = 0." << "\n"; 
       break;
     }
 
@@ -107,7 +107,7 @@ int main(int argc, char* argv[]) {
     contraction_rctree_time += omp_get_wtime();
 
     std::cout << "Contraction RCTree Time: "
-              << contraction_rctree_time << " seconds" << std::endl;
+              << contraction_rctree_time << " seconds" << "\n";
 
     // Step 4: Batch operations
     auto contraction_batched_ops_time = -omp_get_wtime();
@@ -130,8 +130,62 @@ int main(int argc, char* argv[]) {
     contraction_batched_ops_time += omp_get_wtime();
 
     std::cout << "Contraction Batched Operations Time: "
-              << contraction_batched_ops_time << " seconds" << std::endl;
+              << contraction_batched_ops_time << " seconds" << "\n";
 
-    std::cout << answer << std::endl;
+    std::cout << answer << "\n";
+
+
+    // std::vector<int> sz(G_undir.n), p(G_undir.n);
+    // for (int i=0;i<G_undir.n;++i)
+    //   sz[i] = G_weighted_degree[i], p[i] = i;
+    // std::function<int(int)> F = [&](int x) {
+    //   return x == p[x] ? x : p[x] = F(p[x]);
+    // };
+    // std::function<void(int, int)> U = [&](int x, int y) {
+    //   x = F(x), y = F(y);
+    //   if(x != y) {
+    //     p[x] = y, sz[y] += sz[x];
+    //   }
+    // };
+    // std::function<void(int, int)> D = [&](int x, int y) {
+    //   sz[F(x)] -= y;
+    // };
+    // std::function<int(int)> Q = [&](int x) {
+    //   return sz[F(x)];
+    // };
+  
+    // // Step 4: Batch operations
+    // auto contraction_batched_ops_time = -omp_get_wtime();
+    // auto contraction_mixop = parlay::sequence<Contraction_MixOp<W>>((G_edge_list.size() + MST_edge_list.size() - 1) * 2);
+    // // Subtract vertex weight
+    // parlay::parallel_for(0, G_edge_list.E.size(), [&](uintE i) {
+    //   auto [u, v, w] = G_edge_list.E[i];
+    //   contraction_mixop[i * 2] = Contraction_MixOp<W>(contraction_rctree.query_max_path(u, v) * 4 + 1, 0, u, w);
+    //   contraction_mixop[i * 2 + 1] = Contraction_MixOp<W>(contraction_rctree.query_max_path(u, v) * 4 + 2, 0, v, w);
+    // });
+    // // Join edges and Query component induced by joined edges
+    // parlay::parallel_for(0, MST_edge_list.size() - 1, [&](uintE i) {
+    //   auto [u, v] = MST_edge_list[i];
+    //   contraction_mixop[G_edge_list.size() * 2 + i * 2] = Contraction_MixOp<W>(i * 4 + 3, 1, i, 0);
+    //   contraction_mixop[G_edge_list.size() * 2 + i * 2 + 1] = Contraction_MixOp<W>(i * 4 + 4, 2, u, 0);
+    // });
+    // utils::general_sort(contraction_mixop, [&](const Contraction_MixOp<W>& lhs, const Contraction_MixOp<W>& rhs) {
+    //   return lhs.timestamp < rhs.timestamp;
+    // });
+    // W answer = 1e9;
+    // for (auto q : contraction_mixop) {
+    //   if (q.type == 0) {
+    //     D(q.u, q.w);
+    //   } else if(q.type == 1) {
+    //     U(MST_edge_list[q.u].first, MST_edge_list[q.u].second);
+    //   } else {
+    //     answer = std::min(answer, W(Q(q.u)));
+    //   }
+    // }
+    // std::cout << answer << "\n";
+    // contraction_batched_ops_time += omp_get_wtime();
+
+    // std::cout << "Contraction Batched Operations Time: "
+    //           << contraction_batched_ops_time << " seconds" << "\n";
   }
 }
