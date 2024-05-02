@@ -110,104 +110,126 @@ void RCTree<W>::build(parlay::random_generator& gen,
   auto deg = parlay::sequence<uintV>::from_function(
     n_binary, [&](uintV i) {return child_ptr_binary[i + 1] - child_ptr_binary[i] + (i != root);});
 
-  parlay::sequence<uintV> active[2];
-  for (uintV i = 0; i < n_binary; ++i)
-    if (i != root && deg[i] > 0 && deg[i] <= 2)
-      active[deg[i] - 1].emplace_back(i);
+  parlay::sequence<uintV> state(n_binary), parent_peek(n_binary);
 
-  while(active[0].size() + active[1].size()) {
-    gen();
-    auto rake = [&](uintV v) {
-      Cluster<W> *binary_top = nullptr;
-      Cluster<W> *unary[2] = {nullptr, nullptr};
-      uintV usz = 0, boundary = 0, boundary_edge = 0;
-      for (uintV i = child_ptr_binary[v]; i < child_ptr_binary[v + 1]; ++i)
+  auto rake = [&](uintV v) {
+    Cluster<W> *binary_top = nullptr;
+    Cluster<W> *unary[2] = {nullptr, nullptr};
+    uintV usz = 0, boundary = 0, boundary_edge = 0;
+    std::bernoulli_distribution dist(0.5);
+    auto gen_v = gen[v];
+    bool color_v = dist(gen_v);
+    if (!color_v)  return;
+    auto gen_parent = gen[parent_peek[v]];
+    bool color_parent = dist(gen_parent) && state[parent_peek[v]];
+    if (color_parent)  return;
+    {
+      auto [to, id] = parent_binary[v];
+      auto &c = aux_ptr[id];
+      binary_top = c;
+      boundary = (c -> get_top_boundary()) ^ v ^ (c -> get_bottom_boundary());
+      boundary_edge = (c -> get_top_boundary_edge()) ^ id ^ (c -> get_bottom_boundary_edge());
+    }
+    for (uintV i = child_ptr_binary[v]; i < child_ptr_binary[v + 1]; ++i)
+    {
+      auto [to, id] = child_edges_binary[i];
+      auto &c = aux_ptr[id];
+      c -> set_parent_cluster(&rc_clusters[v]);
+      unary[usz++] = c;
+    }
+    {
+      auto [to, id] = parent_binary[v];
+      auto &c = aux_ptr[id];
+      c -> set_parent_cluster(&rc_clusters[v]);
+    }
+    aux_ptr[boundary_edge] = &rc_clusters[v];
+    rc_clusters[v] = Cluster<W>(v, unary[0], unary[1], &vertex_clusters[v],
+                                binary_top, boundary, boundary_edge);
+    vertex_clusters[v].set_parent_cluster(&rc_clusters[v]);
+    gbbs::write_add(deg.data() + rc_clusters[v].get_top_boundary(), -1);
+    // deg[rc_clusters[v].get_top_boundary()]--;
+    deg[v]--;
+    rc_clusters[v].set_val(f_unary(&rc_clusters[v]));
+  };
+
+  auto compress = [&](uintV v) {
+    Cluster<W> *binary[2] = {nullptr, nullptr}, *unary[2] = {nullptr, nullptr};
+    uintV usz = 0, boundary[2] = {0, 0}, boundary_edge[2] = {0, 0};
+    std::bernoulli_distribution dist(0.5);
+    auto gen_v = gen[v];
+    bool color_v = dist(gen_v);
+    if (!color_v)  return;
+    auto gen_parent = gen[parent_peek[v]];
+    bool color_parent = dist(gen_parent) && state[parent_peek[v]];
+    if (color_parent)  return;
+    for (uintV i = child_ptr_binary[v]; i < child_ptr_binary[v + 1]; ++i)
+    {
+      auto [to, id] = child_edges_binary[i];
+      auto &c = aux_ptr[id];
+      if (c -> is_binary())
       {
-        auto [to, id] = child_edges_binary[i];
-        auto &c = aux_ptr[id];
-        c -> set_parent_cluster(&rc_clusters[v]);
+        binary[1] = c;
+        boundary[1] = (c -> get_top_boundary()) ^ v ^ (c -> get_bottom_boundary());
+        boundary_edge[1] = (c -> get_top_boundary_edge()) ^ id ^ (c -> get_bottom_boundary_edge());
+      }
+    }
+    {
+      auto [to, id] = parent_binary[v];
+      auto &c = aux_ptr[id];
+      binary[0] = c;
+      boundary[0] = (c -> get_top_boundary()) ^ v ^ (c -> get_bottom_boundary());
+      boundary_edge[0] = (c -> get_top_boundary_edge()) ^ id ^ (c -> get_bottom_boundary_edge());
+    }
+    for (uintV i = child_ptr_binary[v]; i < child_ptr_binary[v + 1]; ++i)
+    {
+      auto [to, id] = child_edges_binary[i];
+      auto &c = aux_ptr[id];
+      c -> set_parent_cluster(&rc_clusters[v]);
+      if (!(c -> is_binary()))
         unary[usz++] = c;
-      }
-      {
-        auto [to, id] = parent_binary[v];
-        auto &c = aux_ptr[id];
-        c -> set_parent_cluster(&rc_clusters[v]);
-        binary_top = c;
-        boundary = (c -> get_top_boundary()) ^ v ^ (c -> get_bottom_boundary());
-        boundary_edge = (c -> get_top_boundary_edge()) ^ id ^ (c -> get_bottom_boundary_edge());
-        aux_ptr[boundary_edge] = &rc_clusters[v];
-      }
-      rc_clusters[v] = Cluster<W>(v, unary[0], unary[1], &vertex_clusters[v],
-                                  binary_top, boundary, boundary_edge);
-      vertex_clusters[v].set_parent_cluster(&rc_clusters[v]);
-      deg[rc_clusters[v].get_top_boundary()]--;
-      deg[v]--;
-      rc_clusters[v].set_val(f_unary(&rc_clusters[v]));
-    };
+    }
+    {
+      auto [to, id] = parent_binary[v];
+      auto &c = aux_ptr[id];
+      c -> set_parent_cluster(&rc_clusters[v]);
+    }
+    aux_ptr[boundary_edge[0]] = &rc_clusters[v];
+    aux_ptr[boundary_edge[1]] = &rc_clusters[v];
+    rc_clusters[v] = Cluster<W>(v, unary[0], unary[1], &vertex_clusters[v],
+                                binary[0], binary[1], boundary[0], boundary[1],
+                                boundary_edge[0], boundary_edge[1]);
+    vertex_clusters[v].set_parent_cluster(&rc_clusters[v]);
+    deg[v] -= 2;
+    rc_clusters[v].set_val(f_binary(&rc_clusters[v]));
+  };
+  
+  while (true) {
+    parlay::parallel_for(0, n_binary, [&](uintV i) {
+      state[i] = 0;
+      auto d = deg[i];
+      if (i != root && d > 0 && d <= 2)
+        state[i] = d;
+    });
+    
+    if (parlay::all_of(state, [&](uintV i) {return i == 0;}))
+      break;
 
-    auto compress = [&](uintV v) {
-      Cluster<W> *binary[2] = {nullptr, nullptr}, *unary[2] = {nullptr, nullptr};
-      uintV usz = 0, boundary[2] = {0, 0}, boundary_edge[2] = {0, 0};
-      for (uintV i = child_ptr_binary[v]; i < child_ptr_binary[v + 1]; ++i)
-      {
-        auto [to, id] = child_edges_binary[i];
-        auto &c = aux_ptr[id];
-        if (c -> is_binary())
-        {
-          binary[1] = c;
-          boundary[1] = (c -> get_top_boundary()) ^ v ^ (c -> get_bottom_boundary());
-          boundary_edge[1] = (c -> get_top_boundary_edge()) ^ id ^ (c -> get_bottom_boundary_edge());
-        }
-      }
-      {
+    gen();
+    parlay::parallel_for(0, n_binary, [&](uintV v) {
+      if (state[v]) {
         auto [to, id] = parent_binary[v];
         auto &c = aux_ptr[id];
-        binary[0] = c;
-        boundary[0] = (c -> get_top_boundary()) ^ v ^ (c -> get_bottom_boundary());
-        boundary_edge[0] = (c -> get_top_boundary_edge()) ^ id ^ (c -> get_bottom_boundary_edge());
+        parent_peek[v] = (c -> get_top_boundary()) ^ v ^ (c -> get_bottom_boundary());
       }
-      if (deg[boundary[1]] <= 1)  return;
-      std::bernoulli_distribution dist(0.5);
-      auto gen_child = gen[boundary[1]];
-      bool color_child = dist(gen_child);
-      if (color_child)  return;
-      auto gen_v = gen[v];
-      bool color_v = dist(gen_v);
-      if (!color_v)  return;
-      for (uintV i = child_ptr_binary[v]; i < child_ptr_binary[v + 1]; ++i)
-      {
-        auto [to, id] = child_edges_binary[i];
-        auto &c = aux_ptr[id];
-        c -> set_parent_cluster(&rc_clusters[v]);
-        if (!(c -> is_binary()))
-          unary[usz++] =c;
-      }
-      {
-        auto [to, id] = parent_binary[v];
-        auto &c = aux_ptr[id];
-        c -> set_parent_cluster(&rc_clusters[v]);
-      }
-      aux_ptr[boundary_edge[0]] = &rc_clusters[v];
-      aux_ptr[boundary_edge[1]] = &rc_clusters[v];
-      rc_clusters[v] = Cluster<W>(v, unary[0], unary[1], &vertex_clusters[v],
-                                  binary[0], binary[1], boundary[0], boundary[1],
-                                  boundary_edge[0], boundary_edge[1]);
-      vertex_clusters[v].set_parent_cluster(&rc_clusters[v]);
-      deg[v] -= 2;
-      rc_clusters[v].set_val(f_binary(&rc_clusters[v]));
-    };
-
-    for (auto v : active[1])
+    });
+    parlay::parallel_for(0, n_binary, [&](uintV v) {
+      if (state[v] == 2)
         compress(v);
-
-    for (auto v : active[0])
+    });
+    parlay::parallel_for(0, n_binary, [&](uintV v) {
+      if (state[v] == 1)
         rake(v);
-
-    active[0].clear();
-    active[1].clear();
-    for (uintV i = 0; i < n_binary; ++i)
-      if (i != root && deg[i] > 0 && deg[i] <= 2)
-        active[deg[i] - 1].emplace_back(i);
+    });
   }
 
   auto finalize = [&](const uintV v) {
