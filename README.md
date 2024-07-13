@@ -6,9 +6,9 @@ This is a personal project trying to implement the first half of the parallel ra
 
 ## Dependencies
 - OpenMP
-- GBBS ([gbbs](gbbs)) as a submodule, use `git apply gbbs.patch gbbs/` to remove debug information and fix issues in templates and atomic operations
-- ParlayLib ([parlaylib](parlaylib)) as a submodule, use `git apply parlaylib.patch parlaylib/` to fix issues in the scheduler
-- PBBS ([pbbsbench](pbbsbench)) as a submodule
+- GBBS (gbbs) as a submodule, use `git apply gbbs.patch gbbs/` to remove debug information and fix issues in templates and atomic operations
+- ParlayLib (parlaylib) as a submodule, use `git apply parlaylib.patch parlaylib/` to fix issues in the scheduler
+- PBBS (pbbsbench) as a submodule
 
 ## Compliation
 ```
