@@ -1,0 +1,11 @@
+# This is a toy example for the minimum cut problem with a minimum cut of 8.
+# v0 -- 2.5 -- v1
+#    \        /  \
+#    5.5    1.5  4.5
+#      \   /        \
+#       v2 -- 3.5 -- v3 
+0 1 2.5
+2 0 5.5
+1 2 1.5
+3 1 4.5
+3 2 3.5
